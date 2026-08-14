@@ -15,6 +15,10 @@
 #include <climits>
 #include <unordered_map>
 
+#if PLUME_SDL_VULKAN_ENABLED
+#   include <SDL3/SDL_init.h>
+#endif
+
 #if DLSS_ENABLED
 #   include "render/plume_dlss.h"
 #endif
@@ -2097,8 +2101,7 @@ namespace plume {
         }
 #   elif defined(PLUME_SDL_VULKAN_ENABLED)
         VulkanInterface *renderInterface = commandQueue->device->renderInterface;
-        SDL_bool sdlRes = SDL_Vulkan_CreateSurface(desc.renderWindow, renderInterface->instance, &surface);
-        if (sdlRes == SDL_FALSE) {
+        if (!SDL_Vulkan_CreateSurface(desc.renderWindow, renderInterface->instance, nullptr, &surface)) {
             fprintf(stderr, "SDL_Vulkan_CreateSurface failed with error %s.\n", SDL_GetError());
             return;
         }
@@ -4459,11 +4462,7 @@ namespace plume {
 
     // VulkanInterface
 
-#if PLUME_SDL_VULKAN_ENABLED
-    VulkanInterface::VulkanInterface(RenderWindow sdlWindow) {
-#else
     VulkanInterface::VulkanInterface() {
-#endif
         VkResult res = volkInitialize();
         if (res != VK_SUCCESS) {
             fprintf(stderr, "volkInitialize failed with error code 0x%X.\n", res);
@@ -4501,19 +4500,19 @@ namespace plume {
 #   endif
 
 #   if PLUME_SDL_VULKAN_ENABLED
-        // Push the extensions specified by SDL as required.
-        // SDL2 has this awkward requirement for the window to pull the extensions from. 
-        // This can be removed when upgrading to SDL3.
-        if (sdlWindow != nullptr) {
+        // Which surface extension this yields depends on the video driver SDL
+        // picked, so the platform choice happens here rather than at compile time.
+        // SDL reads its video device unguarded, so it has to be up first.
+        if (SDL_WasInit(SDL_INIT_VIDEO)) {
             uint32_t sdlVulkanExtensionCount = 0;
-            if (SDL_Vulkan_GetInstanceExtensions(sdlWindow, &sdlVulkanExtensionCount, nullptr)) {
-                std::vector<char *> sdlVulkanExtensions;
-                sdlVulkanExtensions.resize(sdlVulkanExtensionCount);
-                if (SDL_Vulkan_GetInstanceExtensions(sdlWindow, &sdlVulkanExtensionCount, (const char **)(sdlVulkanExtensions.data()))) {
-                    for (char *sdlVulkanExtension : sdlVulkanExtensions) {
-                        requiredExtensions.insert(sdlVulkanExtension);
-                    }
+            char const *const *sdlVulkanExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlVulkanExtensionCount);
+            if (sdlVulkanExtensions != nullptr) {
+                for (uint32_t i = 0; i < sdlVulkanExtensionCount; i++) {
+                    requiredExtensions.insert(sdlVulkanExtensions[i]);
                 }
+            }
+            else {
+                fprintf(stderr, "SDL_Vulkan_GetInstanceExtensions failed with error %s.\n", SDL_GetError());
             }
         }
 #   endif
@@ -4627,15 +4626,8 @@ namespace plume {
 
     // Global creation function.
 
-#if PLUME_SDL_VULKAN_ENABLED
-    std::unique_ptr<RenderInterface> CreateVulkanInterface(RenderWindow sdlWindow) {
-        std::unique_ptr<VulkanInterface> createdInterface = std::make_unique<VulkanInterface>(sdlWindow);
-        return createdInterface->isValid() ? std::move(createdInterface) : nullptr;
-    }
-#else
     std::unique_ptr<RenderInterface> CreateVulkanInterface() {
         std::unique_ptr<VulkanInterface> createdInterface = std::make_unique<VulkanInterface>();
         return createdInterface->isValid() ? std::move(createdInterface) : nullptr;
     }
-#endif
 };

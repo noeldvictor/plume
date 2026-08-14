@@ -29,13 +29,16 @@ endif()
 
 # Enable SDL Vulkan support
 if(PLUME_SDL_VULKAN_ENABLED)
-    if (NOT TARGET SDL2::SDL2)
-        find_package(SDL2 REQUIRED)
+    if(TARGET SDL3::SDL3-static)
+        set(PLUME_SDL3_TARGET SDL3::SDL3-static)
+    elseif(TARGET SDL3::SDL3)
+        set(PLUME_SDL3_TARGET SDL3::SDL3)
     else()
-        set(SDL2_INCLUDE_DIRS "$<TARGET_PROPERTY:SDL2::SDL2,INTERFACE_INCLUDE_DIRECTORIES>")
+        find_package(SDL3 REQUIRED)
+        set(PLUME_SDL3_TARGET SDL3::SDL3)
     endif()
 
-    message(STATUS "Plume - Building with SDL2_INCLUDE_DIRS: ${SDL2_INCLUDE_DIRS}")
+    message(STATUS "Plume - Building with SDL3 target: ${PLUME_SDL3_TARGET}")
 endif()
 
 # Enable D3D12 Agility SDK support
@@ -90,8 +93,10 @@ if(WIN32)
 endif()
 
 if(PLUME_SDL_VULKAN_ENABLED)
+    # PUBLIC because RenderWindow is defined from SDL3/SDL_vulkan.h in a public
+    # header, so consumers need it too.
     target_compile_definitions(plume PUBLIC PLUME_SDL_VULKAN_ENABLED)
-    target_include_directories(plume PUBLIC ${SDL2_INCLUDE_DIRS})
+    target_link_libraries(plume PUBLIC ${PLUME_SDL3_TARGET})
 endif()
 
 if(PLUME_D3D12_AGILITY_SDK_ENABLED)
