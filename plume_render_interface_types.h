@@ -202,6 +202,14 @@ namespace plume {
         BACK
     };
 
+    // D3D12 and Metal only offer solid and wireframe, so point fill has no
+    // enumerator here even though Vulkan can express it.
+    enum class RenderFillMode {
+        UNKNOWN,
+        SOLID,
+        WIREFRAME
+    };
+
     enum class RenderFrontFace {
         UNKNOWN,
         CLOCKWISE,
@@ -1292,6 +1300,7 @@ namespace plume {
         bool alphaToCoverageEnabled = false;
         RenderPrimitiveTopology primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
         RenderCullMode cullMode = RenderCullMode::NONE;
+        RenderFillMode fillMode = RenderFillMode::SOLID;
         RenderFrontFace frontFace = RenderFrontFace::CLOCKWISE;
         RenderFormat renderTargetFormat[MaxRenderTargets] = {};
         RenderBlendDesc renderTargetBlend[MaxRenderTargets] = {};

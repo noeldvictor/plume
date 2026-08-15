@@ -3097,7 +3097,6 @@ namespace plume {
             psoDesc.IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF;
         }
         psoDesc.PrimitiveTopologyType = toTopologyType(desc.primitiveTopology);
-        psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
         psoDesc.RasterizerState.DepthClipEnable = desc.depthClipEnabled;
         psoDesc.RasterizerState.DepthBias = desc.depthBias;
         psoDesc.RasterizerState.DepthBiasClamp = desc.depthBiasClamp;
@@ -3109,6 +3108,18 @@ namespace plume {
 #       else
             assert(false && "Dynamic depth bias is unsupported without the Agility SDK.");
 #       endif
+        }
+
+        switch (desc.fillMode) {
+        case RenderFillMode::SOLID:
+            psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+            break;
+        case RenderFillMode::WIREFRAME:
+            psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+            break;
+        default:
+            assert(false && "Unknown fill mode.");
+            return;
         }
 
         switch (desc.cullMode) {

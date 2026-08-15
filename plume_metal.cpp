@@ -609,6 +609,18 @@ namespace plume {
         }
     }
 
+    MTL::TriangleFillMode mapFillMode(RenderFillMode fillMode) {
+        switch (fillMode) {
+            case RenderFillMode::SOLID:
+                return MTL::TriangleFillModeFill;
+            case RenderFillMode::WIREFRAME:
+                return MTL::TriangleFillModeLines;
+            default:
+                assert(false && "Unknown fill mode.");
+                return MTL::TriangleFillModeFill;
+        }
+    }
+
     MTL::Winding mapFrontFace(RenderFrontFace frontFace) {
         switch (frontFace) {
             case RenderFrontFace::CLOCKWISE:
@@ -1602,6 +1614,7 @@ namespace plume {
         NS::Error *error = nullptr;
         state.depthStencilState = device->mtl->newDepthStencilState(depthStencilDescriptor);
         state.cullMode = mapCullMode(desc.cullMode);
+        state.fillMode = mapFillMode(desc.fillMode);
         state.depthClipMode = (desc.depthClipEnabled) ? MTL::DepthClipModeClip : MTL::DepthClipModeClamp;
         state.winding = mapFrontFace(desc.frontFace);
         state.renderPipelineState = device->mtl->newRenderPipelineState(descriptor, &error);
@@ -3423,6 +3436,10 @@ namespace plume {
                 if (activeRenderState->cullMode != stateCache.lastCullMode) {
                     activeRenderEncoder->setCullMode(activeRenderState->cullMode);
                     stateCache.lastCullMode = activeRenderState->cullMode;
+                }
+                if (activeRenderState->fillMode != stateCache.lastFillMode) {
+                    activeRenderEncoder->setTriangleFillMode(activeRenderState->fillMode);
+                    stateCache.lastFillMode = activeRenderState->fillMode;
                 }
                 if (activeRenderState->winding != stateCache.lastWinding) {
                     activeRenderEncoder->setFrontFacingWinding(activeRenderState->winding);

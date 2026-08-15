@@ -327,6 +327,20 @@ namespace plume {
         }
     }
 
+    // VK_POLYGON_MODE_LINE needs the fillModeNonSolid feature, which createDevice
+    // enables wherever the physical device reports it.
+    static VkPolygonMode toVk(RenderFillMode fillMode) {
+        switch (fillMode) {
+        case RenderFillMode::SOLID:
+            return VK_POLYGON_MODE_FILL;
+        case RenderFillMode::WIREFRAME:
+            return VK_POLYGON_MODE_LINE;
+        default:
+            assert(false && "Unknown fill mode.");
+            return VK_POLYGON_MODE_MAX_ENUM;
+        }
+    }
+
     static VkFrontFace toVk(RenderFrontFace frontFace) {
         switch (frontFace) {
         case RenderFrontFace::CLOCKWISE:
@@ -1515,7 +1529,7 @@ namespace plume {
         rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterization.depthClampEnable = !desc.depthClipEnabled;
         rasterization.rasterizerDiscardEnable = VK_FALSE;
-        rasterization.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterization.polygonMode = toVk(desc.fillMode);
         rasterization.lineWidth = 1.0f;
         rasterization.cullMode = toVk(desc.cullMode);
         rasterization.frontFace = toVk(desc.frontFace);

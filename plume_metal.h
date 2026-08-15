@@ -189,6 +189,7 @@ namespace plume {
         MTL::RenderPipelineState *renderPipelineState = nullptr;
         MTL::DepthStencilState *depthStencilState = nullptr;
         MTL::CullMode cullMode = MTL::CullModeNone;
+        MTL::TriangleFillMode fillMode = MTL::TriangleFillModeFill;
         MTL::DepthClipMode depthClipMode = MTL::DepthClipModeClip;
         MTL::Winding winding = MTL::WindingClockwise;
         MTL::PrimitiveType primitiveType = MTL::PrimitiveTypeTriangle;
@@ -378,6 +379,7 @@ namespace plume {
 
             // Rasterizer state
             MTL::CullMode lastCullMode = MTL::CullModeNone;
+            MTL::TriangleFillMode lastFillMode = MTL::TriangleFillModeFill;
             MTL::Winding lastWinding = MTL::WindingClockwise;
             MTL::DepthClipMode lastDepthClipMode = MTL::DepthClipModeClip;
 
@@ -399,6 +401,7 @@ namespace plume {
                 lastDepthStencilState = nullptr;
                 lastStencilReference = 0;
                 lastCullMode = MTL::CullModeNone;
+                lastFillMode = MTL::TriangleFillModeFill;
                 lastWinding = MTL::WindingClockwise;
                 lastDepthClipMode = MTL::DepthClipModeClip;
                 lastDepthBias = 0.0f;
