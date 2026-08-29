@@ -10,6 +10,16 @@
 
 #include "plume_vulkan.h"
 
+#if defined(__ANDROID__)
+// plume reports every Vulkan failure through fprintf(stderr, ...), and Android
+// discards stderr - so on a headset the reason a device, swapchain or pipeline
+// failed is simply lost, which is a miserable way to debug a port. Redirect it
+// to logcat. Crude, but it is one line and it is the difference between an
+// error message and "backend pipeline null".
+#include <android/log.h>
+#define fprintf(stream, ...) __android_log_print(ANDROID_LOG_ERROR, "plume", __VA_ARGS__)
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <climits>
@@ -3785,10 +3795,18 @@ namespace plume {
             }
 
             std::string deviceName(deviceProperties.deviceName);
+
+            // An XR runtime names the one device it can present from. Skip
+            // every other one rather than scoring it, so no heuristic can win.
+            const VkPhysicalDevice forced = renderInterface->options.forcedPhysicalDevice;
+            if ((forced != VK_NULL_HANDLE) && (physicalDevices[i] != forced)) {
+                continue;
+            }
+
             uint32_t deviceTypeScore = deviceTypeScoreTable[deviceTypeIndex];
             bool preferDeviceTypeScore = (deviceTypeScore > currentDeviceTypeScore);
             bool preferUserChoice = preferredDeviceName == deviceName;
-            bool preferOption = preferDeviceTypeScore || preferUserChoice;
+            bool preferOption = preferDeviceTypeScore || preferUserChoice || (forced != VK_NULL_HANDLE);
             if (preferOption) {
                 physicalDevice = physicalDevices[i];
                 description.name = deviceName;
@@ -4055,6 +4073,22 @@ namespace plume {
 
         for (const std::string &extension : supportedOptionalExtensions) {
             enabledExtensions.push_back(extension.c_str());
+        }
+
+        // Whatever xrGetVulkanDeviceExtensionsKHR asked for, minus anything
+        // already enabled above: Vulkan rejects a duplicated extension name.
+        for (const std::string &extension : renderInterface->options.extraDeviceExtensions) {
+            bool alreadyEnabled = false;
+            for (const char *enabled : enabledExtensions) {
+                if (extension == enabled) {
+                    alreadyEnabled = true;
+                    break;
+                }
+            }
+
+            if (!alreadyEnabled) {
+                enabledExtensions.push_back(extension.c_str());
+            }
         }
 
         VkDeviceCreateInfo createInfo = {};
@@ -4476,7 +4510,11 @@ namespace plume {
 
     // VulkanInterface
 
-    VulkanInterface::VulkanInterface() {
+    VulkanInterface::VulkanInterface(const VulkanInterfaceOptions *optionsIn) {
+        if (optionsIn != nullptr) {
+            options = *optionsIn;
+        }
+
         VkResult res = volkInitialize();
         if (res != VK_SUCCESS) {
             fprintf(stderr, "volkInitialize failed with error code 0x%X.\n", res);
@@ -4489,6 +4527,9 @@ namespace plume {
         appInfo.pEngineName = "plume";
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.apiVersion = VK_API_VERSION_1_2;
+        if (options.minApiVersion > appInfo.apiVersion) {
+            appInfo.apiVersion = options.minApiVersion;
+        }
 
         VkInstanceCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -4530,6 +4571,13 @@ namespace plume {
             }
         }
 #   endif
+
+        // Inserted as required rather than optional on purpose: if the driver
+        // cannot provide what the XR runtime asked for, the existing missing-
+        // extension path names it instead of failing later in xrCreateSession.
+        for (const std::string &extension : options.extraInstanceExtensions) {
+            requiredExtensions.insert(extension);
+        }
 
         std::unordered_set<std::string> missingRequiredExtensions = requiredExtensions;
         for (uint32_t i = 0; i < extensionCount; i++) {
@@ -4640,8 +4688,12 @@ namespace plume {
 
     // Global creation function.
 
-    std::unique_ptr<RenderInterface> CreateVulkanInterface() {
-        std::unique_ptr<VulkanInterface> createdInterface = std::make_unique<VulkanInterface>();
+    std::unique_ptr<RenderInterface> CreateVulkanInterface(const VulkanInterfaceOptions *options) {
+        std::unique_ptr<VulkanInterface> createdInterface = std::make_unique<VulkanInterface>(options);
         return createdInterface->isValid() ? std::move(createdInterface) : nullptr;
+    }
+
+    std::unique_ptr<RenderInterface> CreateVulkanInterface() {
+        return CreateVulkanInterface(nullptr);
     }
 };

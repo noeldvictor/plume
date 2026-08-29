@@ -448,13 +448,33 @@ namespace plume {
         bool endCapture() override;
     };
 
+    // Lets an OpenXR runtime dictate the parts of Vulkan setup it owns. The
+    // runtime names the instance extensions, the device extensions and the
+    // physical device it will present from; an app that picks its own gets
+    // XR_ERROR_GRAPHICS_DEVICE_INVALID at session creation.
+    //
+    // Every field is optional. A null options pointer keeps the original
+    // behaviour exactly.
+    struct VulkanInterfaceOptions {
+        std::vector<std::string> extraInstanceExtensions;
+        std::vector<std::string> extraDeviceExtensions;
+        // From xrGetVulkanGraphicsDeviceKHR. Overrides the scoring below,
+        // which would otherwise pick the discrete GPU on a laptop whose
+        // headset is wired to the integrated one.
+        VkPhysicalDevice forcedPhysicalDevice = VK_NULL_HANDLE;
+        // From xrGetVulkanGraphicsRequirementsKHR. Only ever raises the
+        // version plume asks for, never lowers it.
+        uint32_t minApiVersion = 0;
+    };
+
     struct VulkanInterface : RenderInterface {
         VkInstance instance = VK_NULL_HANDLE;
         VkApplicationInfo appInfo = {};
         RenderInterfaceCapabilities capabilities;
         std::vector<std::string> deviceNames;
+        VulkanInterfaceOptions options;
 
-        VulkanInterface();
+        VulkanInterface(const VulkanInterfaceOptions *options = nullptr);
 
         ~VulkanInterface() override;
         std::unique_ptr<RenderDevice> createDevice(const std::string &preferredDeviceName) override;
@@ -462,4 +482,6 @@ namespace plume {
         const std::vector<std::string> &getDeviceNames() const override;
         bool isValid() const;
     };
+
+    std::unique_ptr<RenderInterface> CreateVulkanInterface(const VulkanInterfaceOptions *options);
 };
