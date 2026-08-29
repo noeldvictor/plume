@@ -3961,6 +3961,18 @@ namespace plume {
             featuresChain = &accelerationStructureFeatures;
         }
 
+        // Multiview. Core since Vulkan 1.1, but core does not mean on: the
+        // feature still has to be queried and then explicitly enabled at device
+        // creation, and without that a render pass view mask is silently
+        // ignored - the pass renders view 0 and every other layer stays cleared.
+        // That failure mode looks exactly like success from the outside: no
+        // validation error, no crash, the draw count does not change, and the
+        // first layer is correct.
+        VkPhysicalDeviceMultiviewFeatures multiviewFeatures = {};
+        multiviewFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES;
+        multiviewFeatures.pNext = featuresChain;
+        featuresChain = &multiviewFeatures;
+
         VkPhysicalDeviceFeatures2 deviceFeatures = {};
         deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         deviceFeatures.pNext = featuresChain;
@@ -4001,6 +4013,13 @@ namespace plume {
         if (descriptorIndexingSupported) {
             indexingFeatures.pNext = createDeviceChain;
             createDeviceChain = &indexingFeatures;
+        }
+
+        capabilities.multiview = multiviewFeatures.multiview;
+        fprintf(stderr, "plume: multiview feature %s\n", capabilities.multiview ? "ENABLED" : "NOT SUPPORTED");
+        if (capabilities.multiview) {
+            multiviewFeatures.pNext = createDeviceChain;
+            createDeviceChain = &multiviewFeatures;
         }
 
         const bool scalarBlockLayoutSupported = layoutFeatures.scalarBlockLayout;

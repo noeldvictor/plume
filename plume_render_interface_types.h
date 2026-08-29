@@ -1794,6 +1794,12 @@ namespace plume {
         // MSAA.
         bool sampleLocations = false;
 
+        // Multiview - one draw rendering to several layers, each shader
+        // invocation told which by gl_ViewIndex / SV_ViewID. Core since Vulkan
+        // 1.1 but still an opt-in feature, and a view mask is silently ignored
+        // without it.
+        bool multiview = false;
+
         // Resolve.
         bool resolveRegion = false;
         bool resolveModes = false;
