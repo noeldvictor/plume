@@ -4041,6 +4041,20 @@ namespace plume {
         }
 
         capabilities.multiview = multiviewFeatures.multiview;
+        // The feature bit and the limit are separate answers. A driver can
+        // report multiview as supported and still cap maxMultiviewViewCount
+        // below the number of views a pass asks for, and the failure mode is
+        // the silent one again: view 0 renders, the rest stay cleared.
+        {
+            VkPhysicalDeviceMultiviewProperties mvProps = {};
+            mvProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PROPERTIES;
+            VkPhysicalDeviceProperties2 props2 = {};
+            props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+            props2.pNext = &mvProps;
+            vkGetPhysicalDeviceProperties2(physicalDevice, &props2);
+            fprintf(stderr, "plume: multiview maxViewCount=%u maxInstanceIndex=%u\n",
+                    mvProps.maxMultiviewViewCount, mvProps.maxMultiviewInstanceIndex);
+        }
         fprintf(stderr, "plume: multiview feature %s\n", capabilities.multiview ? "ENABLED" : "NOT SUPPORTED");
         if (capabilities.multiview) {
             multiviewFeatures.pNext = createDeviceChain;
