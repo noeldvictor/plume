@@ -3286,6 +3286,31 @@ namespace plume {
             imageCopy.imageExtent.depth = srcLocation.placedFootprint.depth;
             vkCmdCopyBufferToImage(vk, srcBuffer->vk, dstTexture->vk, toImageLayout(dstTexture->textureLayout), 1, &imageCopy);
         }
+        else if ((dstLocation.type == RenderTextureCopyType::PLACED_FOOTPRINT) && (srcLocation.type == RenderTextureCopyType::SUBRESOURCE)) {
+            // Readback: the mirror of the branch above. Without this case a
+            // texture-to-buffer copy fell through to the texture-to-texture
+            // path below and dereferenced a null dstTexture, so any attempt to
+            // read a rendered image back crashed rather than failing.
+            assert(dstBuffer != nullptr);
+            assert(srcTexture != nullptr);
+
+            const uint32_t blockWidth = RenderFormatBlockWidth(srcTexture->desc.format);
+            VkBufferImageCopy imageCopy = {};
+            imageCopy.bufferOffset = dstLocation.placedFootprint.offset;
+            imageCopy.bufferRowLength = ((dstLocation.placedFootprint.rowWidth + blockWidth - 1) / blockWidth) * blockWidth;
+            imageCopy.bufferImageHeight = ((dstLocation.placedFootprint.height + blockWidth - 1) / blockWidth) * blockWidth;
+            imageCopy.imageSubresource.aspectMask = toAspectFlags(srcTexture->desc.format, srcTexture->desc.flags);
+            imageCopy.imageSubresource.baseArrayLayer = srcLocation.subresource.arrayIndex;
+            imageCopy.imageSubresource.layerCount = 1;
+            imageCopy.imageSubresource.mipLevel = srcLocation.subresource.mipLevel;
+            imageCopy.imageOffset.x = (srcBox != nullptr) ? int32_t(srcBox->left) : 0;
+            imageCopy.imageOffset.y = (srcBox != nullptr) ? int32_t(srcBox->top) : 0;
+            imageCopy.imageOffset.z = (srcBox != nullptr) ? int32_t(srcBox->front) : 0;
+            imageCopy.imageExtent.width = dstLocation.placedFootprint.width;
+            imageCopy.imageExtent.height = dstLocation.placedFootprint.height;
+            imageCopy.imageExtent.depth = dstLocation.placedFootprint.depth;
+            vkCmdCopyImageToBuffer(vk, srcTexture->vk, toImageLayout(srcTexture->textureLayout), dstBuffer->vk, 1, &imageCopy);
+        }
         else {
             VkImageCopy imageCopy = {};
             imageCopy.srcSubresource.aspectMask = toAspectFlags(srcTexture->desc.format, srcTexture->desc.flags);
