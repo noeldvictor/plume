@@ -1305,6 +1305,14 @@ namespace plume {
         RenderFormat renderTargetFormat[MaxRenderTargets] = {};
         RenderBlendDesc renderTargetBlend[MaxRenderTargets] = {};
         uint32_t renderTargetCount = 0;
+        // Multiview (VK_KHR_multiview, core in Vulkan 1.1). A non-zero mask
+        // makes one draw render to every layer whose bit is set, with the
+        // shader reading gl_ViewIndex / SV_ViewID to tell them apart - which is
+        // how stereo is done without paying for a second submission. 0b11 is
+        // both eyes. Zero leaves the pipeline single-view.
+        //
+        // Ignored by the D3D12 backend, which has its own view-instancing path.
+        uint32_t viewMask = 0;
         bool logicOpEnabled = false;
         RenderLogicOperation logicOp = RenderLogicOperation::NOOP;
         RenderFormat depthTargetFormat = RenderFormat::UNKNOWN;
@@ -1624,6 +1632,11 @@ namespace plume {
     };
 
     struct RenderFramebufferDesc {
+        // Must match the viewMask of every pipeline drawn into this
+        // framebuffer: Vulkan validates the two against each other, and the
+        // attachments must be array views with at least as many layers as the
+        // mask has bits.
+        uint32_t viewMask = 0;
         const RenderTexture **colorAttachments = nullptr;
         const RenderTextureView **colorAttachmentViews = nullptr;
         uint32_t colorAttachmentsCount = 0;

@@ -1656,7 +1656,7 @@ namespace plume {
             renderTargetFormats[i] = toVk(desc.renderTargetFormat[i]);
         }
 
-        renderPass = createRenderPass(device, renderTargetFormats.data(), desc.renderTargetCount, toVk(desc.depthTargetFormat), VkSampleCountFlagBits(desc.multisampling.sampleCount));
+        renderPass = createRenderPass(device, renderTargetFormats.data(), desc.renderTargetCount, toVk(desc.depthTargetFormat), VkSampleCountFlagBits(desc.multisampling.sampleCount), desc.viewMask);
         if (renderPass == VK_NULL_HANDLE) {
             return;
         }
@@ -1703,7 +1703,7 @@ namespace plume {
         return RenderPipelineProgram();
     }
 
-    VkRenderPass VulkanGraphicsPipeline::createRenderPass(VulkanDevice *device, const VkFormat *renderTargetFormat, uint32_t renderTargetCount, VkFormat depthTargetFormat, VkSampleCountFlagBits sampleCount) {
+    VkRenderPass VulkanGraphicsPipeline::createRenderPass(VulkanDevice *device, const VkFormat *renderTargetFormat, uint32_t renderTargetCount, VkFormat depthTargetFormat, VkSampleCountFlagBits sampleCount, uint32_t viewMask) {
         VkRenderPass renderPass = VK_NULL_HANDLE;
         VkSubpassDescription subpass = {};
         VkAttachmentReference depthReference = {};
@@ -1757,6 +1757,21 @@ namespace plume {
         passInfo.attachmentCount = uint32_t(attachments.size());
         passInfo.pSubpasses = &subpass;
         passInfo.subpassCount = 1;
+
+        // One correlation mask covering the same views: it tells the driver the
+        // views are rendered together and may share work, which on a tiler is
+        // the difference between multiview being a win and being two passes
+        // wearing a trenchcoat.
+        const uint32_t correlationMask = viewMask;
+        VkRenderPassMultiviewCreateInfo multiviewInfo = {};
+        if (viewMask != 0) {
+            multiviewInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO;
+            multiviewInfo.subpassCount = 1;
+            multiviewInfo.pViewMasks = &viewMask;
+            multiviewInfo.correlationMaskCount = 1;
+            multiviewInfo.pCorrelationMasks = &correlationMask;
+            passInfo.pNext = &multiviewInfo;
+        }
 
         VkResult res = vkCreateRenderPass(device->vk, &passInfo, nullptr, &renderPass);
         if (res == VK_SUCCESS) {
@@ -2645,8 +2660,23 @@ namespace plume {
             subpass.pDepthStencilAttachment = &depthReference;
         }
 
+        // Mirrors the pipeline's render pass: Vulkan requires the two to be
+        // compatible, so a multiview pipeline needs a multiview framebuffer
+        // pass with the same mask or every draw is a validation error.
+        uint32_t fbViewMask = desc.viewMask;
+        const uint32_t fbCorrelationMask = fbViewMask;
+        VkRenderPassMultiviewCreateInfo fbMultiviewInfo = {};
+
         VkRenderPassCreateInfo passInfo = {};
         passInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        if (fbViewMask != 0) {
+            fbMultiviewInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO;
+            fbMultiviewInfo.subpassCount = 1;
+            fbMultiviewInfo.pViewMasks = &fbViewMask;
+            fbMultiviewInfo.correlationMaskCount = 1;
+            fbMultiviewInfo.pCorrelationMasks = &fbCorrelationMask;
+            passInfo.pNext = &fbMultiviewInfo;
+        }
         passInfo.pAttachments = attachments.data();
         passInfo.attachmentCount = uint32_t(attachments.size());
         passInfo.pSubpasses = &subpass;

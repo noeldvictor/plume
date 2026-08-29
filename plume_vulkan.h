@@ -190,7 +190,7 @@ namespace plume {
         ~VulkanGraphicsPipeline() override;
         void setName(const std::string &name) override;
         RenderPipelineProgram getProgram(const std::string &name) const override;
-        static VkRenderPass createRenderPass(VulkanDevice *device, const VkFormat *renderTargetFormat, uint32_t renderTargetCount, VkFormat depthTargetFormat, VkSampleCountFlagBits sampleCount);
+        static VkRenderPass createRenderPass(VulkanDevice *device, const VkFormat *renderTargetFormat, uint32_t renderTargetCount, VkFormat depthTargetFormat, VkSampleCountFlagBits sampleCount, uint32_t viewMask = 0);
     };
 
     struct VulkanRaytracingPipeline : VulkanPipeline {
