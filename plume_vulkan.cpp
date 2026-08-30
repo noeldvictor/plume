@@ -4143,6 +4143,28 @@ namespace plume {
         deviceFeatures.pNext = featuresChain;
         vkGetPhysicalDeviceFeatures2(physicalDevice, &deviceFeatures);
 
+        // Logged because the recompiled shaders reach guest constants through
+        // vk::RawBufferLoad at a uint64_t device address, which needs both of
+        // these. Validation on Quest already reported Int64 declared while
+        // shaderInt64 was not enabled - formally undefined on the renderer's
+        // hottest path - and an Adreno driver that refuses to compile such a
+        // shader reports only "Shader compilation failed", with no reason.
+#if defined(__ANDROID__)
+        // Not stderr: an Android app stdio goes nowhere by default, and
+        // log.redirect-stdio does not rescue it here.
+        __android_log_print(ANDROID_LOG_INFO, "plume",
+                "shaderInt64=%d bufferDeviceAddress=%d dynIndex=%d",
+                deviceFeatures.features.shaderInt64 ? 1 : 0,
+                bufferDeviceAddressFeatures.bufferDeviceAddress ? 1 : 0,
+                deviceFeatures.features.shaderStorageBufferArrayDynamicIndexing ? 1 : 0);
+#else
+        fprintf(stderr, "plume: shaderInt64=%d bufferDeviceAddress=%d "
+                        "shaderStorageBufferArrayDynamicIndexing=%d\n",
+                deviceFeatures.features.shaderInt64 ? 1 : 0,
+                bufferDeviceAddressFeatures.bufferDeviceAddress ? 1 : 0,
+                deviceFeatures.features.shaderStorageBufferArrayDynamicIndexing ? 1 : 0);
+#endif
+
         // Check for properties.
         if (rayTracingFound) {
             rtPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
