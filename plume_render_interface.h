@@ -127,6 +127,10 @@ namespace plume {
         virtual void setGraphicsPipelineLayout(const RenderPipelineLayout *pipelineLayout) = 0;
         virtual void setGraphicsPushConstants(uint32_t rangeIndex, const void *data, uint32_t offset = 0, uint32_t size = 0) = 0;
         virtual void setGraphicsDescriptorSet(RenderDescriptorSet *descriptorSet, uint32_t setIndex) = 0;
+        // Bind with per-draw base offsets for the set's CONSTANT_BUFFER_DYNAMIC
+        // ranges, in binding order. Backends without dynamic descriptors ignore
+        // the offsets and behave as setGraphicsDescriptorSet.
+        virtual void setGraphicsDescriptorSetDynamic(RenderDescriptorSet *descriptorSet, uint32_t setIndex, const uint32_t *dynamicOffsets, uint32_t dynamicOffsetCount) { setGraphicsDescriptorSet(descriptorSet, setIndex); }
         virtual void setGraphicsRootDescriptor(RenderBufferReference bufferReference, uint32_t rootDescriptorIndex) = 0;
         virtual void setRaytracingPipelineLayout(const RenderPipelineLayout *pipelineLayout) = 0;
         virtual void setRaytracingPushConstants(uint32_t rangeIndex, const void *data, uint32_t offset = 0, uint32_t size = 0) = 0;

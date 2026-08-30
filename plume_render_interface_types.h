@@ -344,6 +344,11 @@ namespace plume {
     enum class RenderDescriptorRangeType {
         UNKNOWN,
         CONSTANT_BUFFER,
+        // A uniform buffer whose base offset is supplied at bind time rather
+        // than baked into the descriptor. Lets one large buffer back many
+        // per-draw constant blocks without a descriptor write per draw, which
+        // is what a root descriptor gives you on D3D12 for free.
+        CONSTANT_BUFFER_DYNAMIC,
         FORMATTED_BUFFER,
         READ_WRITE_FORMATTED_BUFFER,
         TEXTURE,

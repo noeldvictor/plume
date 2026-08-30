@@ -455,6 +455,7 @@ namespace plume {
         case RenderDescriptorRangeType::READ_WRITE_STRUCTURED_BUFFER:
         case RenderDescriptorRangeType::READ_WRITE_BYTE_ADDRESS_BUFFER:
             return D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+        case RenderDescriptorRangeType::CONSTANT_BUFFER_DYNAMIC:
         case RenderDescriptorRangeType::CONSTANT_BUFFER:
             return D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
         case RenderDescriptorRangeType::SAMPLER:
@@ -971,6 +972,7 @@ namespace plume {
         uint32_t descriptorIndexClamped = std::min(descriptorIndex, descriptorTypeMaxIndex);
         RenderDescriptorRangeType descriptorType = descriptorTypes[descriptorIndexClamped];
         switch (descriptorType) {
+        case RenderDescriptorRangeType::CONSTANT_BUFFER_DYNAMIC:
         case RenderDescriptorRangeType::CONSTANT_BUFFER: {
             uint64_t bufferViewSize = bufferSize;
             if ((bufferSize == 0) && (interfaceBuffer != nullptr)) {
@@ -1233,6 +1235,7 @@ namespace plume {
 
             break;
         }
+        case RenderDescriptorRangeType::CONSTANT_BUFFER_DYNAMIC:
         case RenderDescriptorRangeType::CONSTANT_BUFFER:
         case RenderDescriptorRangeType::FORMATTED_BUFFER:
         case RenderDescriptorRangeType::READ_WRITE_FORMATTED_BUFFER:
