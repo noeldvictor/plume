@@ -160,7 +160,7 @@ namespace plume {
 
         D3D12QueryPool(D3D12Device *device, uint32_t queryCount);
         virtual ~D3D12QueryPool() override;
-        virtual void queryResults() override;
+        virtual void queryResults(uint32_t count = 0) override;
         virtual const uint64_t *getResults() const override;
         virtual uint32_t getCount() const override;
     };

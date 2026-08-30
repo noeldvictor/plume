@@ -304,7 +304,7 @@ namespace plume {
 
         VulkanQueryPool(VulkanDevice *device, uint32_t queryCount);
         virtual ~VulkanQueryPool() override;
-        virtual void queryResults() override;
+        virtual void queryResults(uint32_t count = 0) override;
         virtual const uint64_t *getResults() const override;
         virtual uint32_t getCount() const override;
     };

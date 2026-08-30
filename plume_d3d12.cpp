@@ -1801,7 +1801,11 @@ namespace plume {
         }
     }
 
-    void D3D12QueryPool::queryResults() {
+    void D3D12QueryPool::queryResults(uint32_t count) {
+        // D3D12 reads back a mapped buffer rather than asking the driver, so an
+        // unwritten tail is harmless here and the count is accepted only to
+        // match the interface.
+        (void)count;
         void *readbackData = readbackBuffer->map();
         memcpy(results.data(), readbackData, sizeof(uint64_t) * results.size());
         readbackBuffer->unmap();

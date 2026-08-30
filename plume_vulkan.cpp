@@ -2844,8 +2844,11 @@ namespace plume {
         vkDestroyQueryPool(device->vk, vk, nullptr);
     }
 
-    void VulkanQueryPool::queryResults() {
-	    VkResult res = vkGetQueryPoolResults(device->vk, vk, 0, uint32_t(results.size()), sizeof(uint64_t) * results.size(), results.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+    void VulkanQueryPool::queryResults(uint32_t count) {
+        const uint32_t n = (count == 0 || count > uint32_t(results.size()))
+                               ? uint32_t(results.size())
+                               : count;
+	    VkResult res = vkGetQueryPoolResults(device->vk, vk, 0, n, sizeof(uint64_t) * n, results.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
         if (res != VK_SUCCESS) {
             fprintf(stderr, "vkGetQueryPoolResults failed with error code 0x%X.\n", res);
             return;
