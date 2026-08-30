@@ -2384,7 +2384,22 @@ namespace plume {
         createInfo.imageExtent.width = width;
         createInfo.imageExtent.height = height;
         createInfo.imageArrayLayers = 1;
+        // TRANSFER_SRC so the finished frame can be read back.
+        //
+        // Without it, copying *from* a swapchain image is invalid usage: the
+        // copy is silently dropped and the readback buffer stays zero, with no
+        // error unless the validation layers happen to be on. That is exactly
+        // how reblue's one-shot frame capture came to return an all-black image
+        // on every path for as long as it existed, which is indistinguishable
+        // from a rendering bug and cost a great deal of time.
+        //
+        // Every driver worth targeting advertises it, but it is optional, so it
+        // is masked against what the surface actually supports rather than
+        // assumed - requesting an unsupported usage fails swapchain creation
+        // outright, which would be a far worse failure than losing a debug
+        // capture.
         createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        createInfo.imageUsage |= (surfaceCapabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
         createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
         createInfo.compositeAlpha = pickedAlphaFlag;
