@@ -10,6 +10,8 @@
 
 #include "plume_vulkan.h"
 
+#include <cstdlib>
+
 #if defined(__ANDROID__)
 // plume reports every Vulkan failure through fprintf(stderr, ...), and Android
 // discards stderr - so on a headset the reason a device, swapchain or pipeline
@@ -2688,6 +2690,13 @@ namespace plume {
             return;
         }
         
+        // Keep the pieces so getRenderPass can emit load-op variants later.
+        attachmentDescs = attachments;
+        this->colorReferences = colorReferences;
+        this->depthReference = depthReference;
+        hasDepthAttachment = (subpass.pDepthStencilAttachment != nullptr);
+        this->viewMask = fbViewMask;
+
         VkFramebufferCreateInfo fbInfo = {};
         fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         fbInfo.renderPass = renderPass;
@@ -2712,6 +2721,81 @@ namespace plume {
         if (renderPass != VK_NULL_HANDLE) {
             vkDestroyRenderPass(device->vk, renderPass, nullptr);
         }
+
+        for (auto &pair : clearPassCache) {
+            if (pair.second != VK_NULL_HANDLE) {
+                vkDestroyRenderPass(device->vk, pair.second, nullptr);
+            }
+        }
+    }
+
+    VkRenderPass VulkanFramebuffer::getRenderPass(uint32_t clearMask) const {
+        if (clearMask == 0) {
+            return renderPass;
+        }
+
+        auto it = clearPassCache.find(clearMask);
+        if (it != clearPassCache.end()) {
+            return (it->second != VK_NULL_HANDLE) ? it->second : renderPass;
+        }
+
+        // Same attachments, same references, same multiview mask - only the
+        // load operations differ, and render-pass compatibility ignores those.
+        // So this framebuffer and every pipeline built against the LOAD pass
+        // stay valid against the variant.
+        std::vector<VkAttachmentDescription> variant = attachmentDescs;
+        for (size_t i = 0; i < colorReferences.size(); i++) {
+            if (clearMask & (1u << i)) {
+                variant[colorReferences[i].attachment].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            }
+        }
+
+        if (hasDepthAttachment) {
+            VkAttachmentDescription &depth = variant[depthReference.attachment];
+            if (clearMask & (1u << 8)) {
+                depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            }
+            if (clearMask & (1u << 9)) {
+                depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            }
+        }
+
+        VkSubpassDescription subpass = {};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.pColorAttachments = !colorReferences.empty() ? colorReferences.data() : nullptr;
+        subpass.colorAttachmentCount = uint32_t(colorReferences.size());
+        if (hasDepthAttachment) {
+            subpass.pDepthStencilAttachment = &depthReference;
+        }
+
+        uint32_t passViewMask = viewMask;
+        const uint32_t correlationMask = passViewMask;
+        VkRenderPassMultiviewCreateInfo multiviewInfo = {};
+        VkRenderPassCreateInfo passInfo = {};
+        passInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        if (passViewMask != 0) {
+            multiviewInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO;
+            multiviewInfo.subpassCount = 1;
+            multiviewInfo.pViewMasks = &passViewMask;
+            multiviewInfo.correlationMaskCount = 1;
+            multiviewInfo.pCorrelationMasks = &correlationMask;
+            passInfo.pNext = &multiviewInfo;
+        }
+        passInfo.pAttachments = variant.data();
+        passInfo.attachmentCount = uint32_t(variant.size());
+        passInfo.pSubpasses = &subpass;
+        passInfo.subpassCount = 1;
+
+        VkRenderPass pass = VK_NULL_HANDLE;
+        const VkResult res = vkCreateRenderPass(device->vk, &passInfo, nullptr, &pass);
+        if (res != VK_SUCCESS) {
+            fprintf(stderr, "vkCreateRenderPass (clear variant) failed 0x%X.\n", res);
+            clearPassCache[clearMask] = VK_NULL_HANDLE;
+            return renderPass;
+        }
+
+        clearPassCache[clearMask] = pass;
+        return pass;
     }
 
     uint32_t VulkanFramebuffer::getWidth() const {
@@ -3201,6 +3285,17 @@ namespace plume {
         assert(attachmentIndex < targetFramebuffer->colorAttachments.size());
         assert((clearRectsCount == 0) || (clearRects != nullptr));
 
+        // A full-area clear with no pass open yet becomes the load operation.
+        if ((activeRenderPass == VK_NULL_HANDLE) && (clearRectsCount == 0) && (attachmentIndex < 8)) {
+            auto &pending = pendingClearValues[attachmentIndex].color.float32;
+            pending[0] = colorValue.r;
+            pending[1] = colorValue.g;
+            pending[2] = colorValue.b;
+            pending[3] = colorValue.a;
+            pendingClearMask |= (1u << attachmentIndex);
+            return;
+        }
+
         checkActiveRenderPass();
 
         thread_local std::vector<VkClearRect> rectVector;
@@ -3220,6 +3315,20 @@ namespace plume {
     void VulkanCommandList::clearDepthStencil(bool clearDepth, bool clearStencil, float depthValue, uint32_t stencilValue, const RenderRect *clearRects, uint32_t clearRectsCount) {
         assert(targetFramebuffer != nullptr);
         assert((clearRectsCount == 0) || (clearRects != nullptr));
+
+        if ((activeRenderPass == VK_NULL_HANDLE) && (clearRectsCount == 0) && targetFramebuffer->hasDepthAttachment) {
+            pendingClearValues[8].depthStencil.depth = depthValue;
+            pendingClearValues[8].depthStencil.stencil = stencilValue;
+            if (clearDepth) {
+                pendingClearMask |= (1u << 8);
+            }
+            if (clearStencil) {
+                pendingClearMask |= (1u << 9);
+            }
+            if (clearDepth || clearStencil) {
+                return;
+            }
+        }
 
         checkActiveRenderPass();
 
@@ -3552,18 +3661,46 @@ namespace plume {
         assert(targetFramebuffer != nullptr);
         
         if (activeRenderPass == VK_NULL_HANDLE) {
+            // Any clear deferred since the last pass ended is applied as the
+            // pass's load operation. On a tile-based GPU that is the whole
+            // saving: LOAD_OP_LOAD pulls every tile in from main memory only
+            // for vkCmdClearAttachments to overwrite it, where LOAD_OP_CLEAR
+            // initialises the tile on chip and never reads memory at all.
+            const uint32_t clearMask = pendingClearMask;
+            VkClearValue clearValues[9] = {};
+            if (clearMask != 0) {
+                const size_t colorCount = targetFramebuffer->colorAttachments.size();
+                for (size_t i = 0; i < colorCount && i < 8; i++) {
+                    clearValues[i] = pendingClearValues[i];
+                }
+                if (targetFramebuffer->hasDepthAttachment) {
+                    clearValues[targetFramebuffer->depthReference.attachment] = pendingClearValues[8];
+                }
+            }
+
             VkRenderPassBeginInfo beginInfo = {};
             beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            beginInfo.renderPass = targetFramebuffer->renderPass;
+            beginInfo.renderPass = targetFramebuffer->getRenderPass(clearMask);
             beginInfo.framebuffer = targetFramebuffer->vk;
             beginInfo.renderArea.extent.width = targetFramebuffer->width;
             beginInfo.renderArea.extent.height = targetFramebuffer->height;
+            if (clearMask != 0) {
+                beginInfo.clearValueCount = uint32_t(targetFramebuffer->attachmentDescs.size());
+                beginInfo.pClearValues = clearValues;
+            }
             vkCmdBeginRenderPass(vk, &beginInfo, VkSubpassContents::VK_SUBPASS_CONTENTS_INLINE);
-            activeRenderPass = targetFramebuffer->renderPass;
+            activeRenderPass = beginInfo.renderPass;
+            pendingClearMask = 0;
         }
     }
 
     void VulkanCommandList::endActiveRenderPass() {
+        // A clear with no draw behind it still has to reach the attachment, so
+        // open the pass purely to run its load operation.
+        if ((activeRenderPass == VK_NULL_HANDLE) && (pendingClearMask != 0) && (targetFramebuffer != nullptr)) {
+            checkActiveRenderPass();
+        }
+
         if (activeRenderPass != VK_NULL_HANDLE) {
             vkCmdEndRenderPass(vk);
             activeRenderPass = VK_NULL_HANDLE;

@@ -274,11 +274,27 @@ namespace plume {
         uint32_t width = 0;
         uint32_t height = 0;
 
+        // Everything needed to rebuild this pass with a different set of load
+        // operations. A tile-based GPU pays main-memory bandwidth for every
+        // LOAD_OP_LOAD, so a pass whose contents are about to be cleared wants
+        // LOAD_OP_CLEAR instead - see getRenderPass.
+        std::vector<VkAttachmentDescription> attachmentDescs;
+        std::vector<VkAttachmentReference> colorReferences;
+        VkAttachmentReference depthReference = {};
+        bool hasDepthAttachment = false;
+        uint32_t viewMask = 0;
+        mutable std::unordered_map<uint32_t, VkRenderPass> clearPassCache;
+
         VulkanFramebuffer(VulkanDevice *device, const RenderFramebufferDesc &desc);
         ~VulkanFramebuffer() override;
         uint32_t getWidth() const override;
         uint32_t getHeight() const override;
         bool contains(const VulkanTexture *attachment) const;
+        // clearMask: bit i selects colour attachment i, bit 8 the depth/stencil
+        // attachment. 0 returns the plain LOAD pass. Variants are cached, and
+        // all of them are render-pass-compatible with this framebuffer because
+        // Vulkan compatibility ignores load and store operations.
+        VkRenderPass getRenderPass(uint32_t clearMask) const;
     };
 
     struct VulkanQueryPool : RenderQueryPool {
@@ -298,6 +314,11 @@ namespace plume {
         VkCommandPool commandPool = VK_NULL_HANDLE;
         VulkanCommandQueue *queue = nullptr;
         const VulkanFramebuffer *targetFramebuffer = nullptr;
+        // A clear issued while no render pass is open is deferred, so it can be
+        // folded into the pass's load operation rather than costing a full tile
+        // load followed by a vkCmdClearAttachments that discards it.
+        uint32_t pendingClearMask = 0;
+        VkClearValue pendingClearValues[9] = {};
         const VulkanPipelineLayout *activeComputePipelineLayout = nullptr;
         const VulkanPipelineLayout *activeGraphicsPipelineLayout = nullptr;
         const VulkanPipelineLayout *activeRaytracingPipelineLayout = nullptr;
