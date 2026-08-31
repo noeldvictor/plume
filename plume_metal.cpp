@@ -577,6 +577,7 @@ namespace plume {
             case RenderTextureViewDimension::TEXTURE_1D:
                 assert(sampleCount <= 1 && "Multisampling not supported for 1D textures");
                 return (arraySize > 1) ? MTL::TextureType1DArray : MTL::TextureType1D;
+            case RenderTextureViewDimension::TEXTURE_2D_ARRAY:
             case RenderTextureViewDimension::TEXTURE_2D:
                 if (arraySize > 1) {
                     return (sampleCount > 1) ? MTL::TextureType2DMultisampleArray : MTL::TextureType2DArray;

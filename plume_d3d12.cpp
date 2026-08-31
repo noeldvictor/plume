@@ -1126,7 +1126,8 @@ namespace plume {
                         srvDesc.Texture1D.MostDetailedMip = interfaceTextureView->mipSlice;
                     }
                     break;
-                case RenderTextureViewDimension::TEXTURE_2D:
+                case RenderTextureViewDimension::TEXTURE_2D_ARRAY:
+            case RenderTextureViewDimension::TEXTURE_2D:
                     if (isMSAA) {
                         if (interfaceTextureView->arraySize > 1) {
                             srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY;
@@ -1207,7 +1208,8 @@ namespace plume {
                         uavDesc.Texture1D.MipSlice = interfaceTextureView->mipSlice;
                     }
                     break;
-                case RenderTextureViewDimension::TEXTURE_2D:
+                case RenderTextureViewDimension::TEXTURE_2D_ARRAY:
+            case RenderTextureViewDimension::TEXTURE_2D:
                     if (interfaceTextureView->arraySize > 1) {
                         uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
                         uavDesc.Texture2DArray.MipSlice = interfaceTextureView->mipSlice;
@@ -1569,6 +1571,7 @@ namespace plume {
                     rtvDesc.Texture1D.MipSlice = textureView->desc.mipSlice;
                 }
                 break;
+            case RenderTextureViewDimension::TEXTURE_2D_ARRAY:
             case RenderTextureViewDimension::TEXTURE_2D:
                 if (texture->desc.arraySize > 1) {
                     if (isMSAA) {
@@ -1684,6 +1687,7 @@ namespace plume {
                     dsvDesc.Texture1D.MipSlice = textureView->desc.mipSlice;
                 }
                 break;
+            case RenderTextureViewDimension::TEXTURE_2D_ARRAY:
             case RenderTextureViewDimension::TEXTURE_2D:
                 if (texture->desc.arraySize > 1) {
                     if (isMSAA) {

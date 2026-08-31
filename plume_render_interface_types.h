@@ -175,7 +175,14 @@ namespace plume {
         TEXTURE_1D,
         TEXTURE_2D,
         TEXTURE_3D,
-        TEXTURE_CUBE
+        TEXTURE_CUBE,
+        // Explicitly an array view, even at one layer. TEXTURE_2D already
+        // becomes VK_IMAGE_VIEW_TYPE_2D_ARRAY when arraySize > 1, but a shader
+        // that declares Texture2DArray needs that view type for EVERY
+        // descriptor it might sample - a one-layer 2D view bound to an array
+        // sampler is a type mismatch - so the choice has to be expressible
+        // independently of the layer count.
+        TEXTURE_2D_ARRAY
     };
 
     enum class RenderCommandListType {

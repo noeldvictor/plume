@@ -296,6 +296,8 @@ namespace plume {
             return arraySize > 1 ? VK_IMAGE_VIEW_TYPE_1D_ARRAY : VK_IMAGE_VIEW_TYPE_1D;
         case RenderTextureViewDimension::TEXTURE_2D:
             return arraySize > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+        case RenderTextureViewDimension::TEXTURE_2D_ARRAY:
+            return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
         case RenderTextureViewDimension::TEXTURE_3D:
             return VK_IMAGE_VIEW_TYPE_3D;
         case RenderTextureViewDimension::TEXTURE_CUBE:
