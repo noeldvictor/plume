@@ -100,6 +100,11 @@ namespace plume {
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME,
         VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME,
+        // Fixed foveated rendering by fragment density map. Unlike
+        // XR_FB_foveation this decorates an ordinary render pass, so it can
+        // foveate a renderer that owns its own targets rather than one that
+        // renders into an XR swapchain.
+        VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME,
         VK_KHR_PRESENT_ID_EXTENSION_NAME,
         VK_KHR_PRESENT_WAIT_EXTENSION_NAME,
         VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME,
@@ -4057,6 +4062,10 @@ namespace plume {
         for (uint32_t i = 0; i < extensionCount; i++) {
             const std::string extensionName(availableExtensions[i].extensionName);
             missingRequiredExtensions.erase(extensionName);
+
+            if (extensionName == VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME) {
+                capabilities.fragmentDensityMap = true;
+            }
 
             if (OptionalDeviceExtensions.find(extensionName) != OptionalDeviceExtensions.end()) {
                 supportedOptionalExtensions.insert(extensionName);

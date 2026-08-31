@@ -1789,6 +1789,10 @@ namespace plume {
     };
 
     struct RenderDeviceCapabilities {
+        // VK_EXT_fragment_density_map: fixed foveated rendering attached to a
+        // render pass, rather than to an XR swapchain. Lets a renderer that
+        // owns its targets foveate them directly.
+        bool fragmentDensityMap = false;
         // Geometry shaders.
         bool geometryShader = false;
 
