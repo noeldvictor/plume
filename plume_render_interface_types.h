@@ -448,7 +448,12 @@ namespace plume {
             DEPTH_TARGET = 1U << 1,
             STORAGE = 1U << 2,
             UNORDERED_ACCESS = 1U << 3,
-            CUBE = 1U << 4
+            CUBE = 1U << 4,
+            // Usable as a fragment density map: the per-tile shading rate for
+            // fixed foveated rendering. Needs its own usage bit, and the image
+            // lives in FRAGMENT_DENSITY_MAP_OPTIMAL rather than a sampled or
+            // attachment layout.
+            FRAGMENT_DENSITY_MAP = 1U << 5
         };
     };
 
@@ -488,7 +493,9 @@ namespace plume {
         COPY_DEST,
         RESOLVE_SOURCE,
         RESOLVE_DEST,
-        PRESENT
+        PRESENT,
+        // Where a fragment density map lives while a render pass reads it.
+        FRAGMENT_DENSITY_MAP
     };
     
     namespace RenderSampleCount {

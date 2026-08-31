@@ -752,6 +752,8 @@ namespace plume {
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         case RenderTextureLayout::PRESENT:
             return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        case RenderTextureLayout::FRAGMENT_DENSITY_MAP:
+            return VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
         default:
             assert(false && "Unknown texture layout.");
             return VK_IMAGE_LAYOUT_UNDEFINED;
@@ -1025,6 +1027,12 @@ namespace plume {
         imageInfo.usage |= (desc.flags & RenderTextureFlag::RENDER_TARGET) ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0;
         imageInfo.usage |= (desc.flags & RenderTextureFlag::DEPTH_TARGET) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : 0;
         imageInfo.usage |= (desc.flags & RenderTextureFlag::STORAGE) ? VK_IMAGE_USAGE_STORAGE_BIT : 0;
+        if (desc.flags & RenderTextureFlag::FRAGMENT_DENSITY_MAP) {
+            // Only the density usage and a transfer destination to upload it.
+            // COLOR_ATTACHMENT and STORAGE are not legal alongside it on every
+            // driver, and SAMPLED is not needed - nothing reads it as a texture.
+            imageInfo.usage = VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        }
 
         if (desc.multisampling.sampleLocationsEnabled && (desc.flags & RenderTextureFlag::DEPTH_TARGET)) {
             imageInfo.flags |= VK_IMAGE_CREATE_SAMPLE_LOCATIONS_COMPATIBLE_DEPTH_BIT_EXT;
@@ -4210,6 +4218,17 @@ namespace plume {
             presentWaitFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR;
             presentWaitFeatures.pNext = featuresChain;
             featuresChain = &presentWaitFeatures;
+        }
+
+        // Enabling the extension is not enough: the feature has to be turned on
+        // in the device too, or every render pass that names a density map
+        // fails to create and every pipeline built against one comes back null.
+        VkPhysicalDeviceFragmentDensityMapFeaturesEXT densityMapFeatures = {};
+        const bool densityMapFound = supportedOptionalExtensions.find(VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME) != supportedOptionalExtensions.end();
+        if (densityMapFound) {
+            densityMapFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_FEATURES_EXT;
+            densityMapFeatures.pNext = featuresChain;
+            featuresChain = &densityMapFeatures;
         }
 
         VkPhysicalDeviceRobustness2FeaturesEXT robustnessFeatures = {};
