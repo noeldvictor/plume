@@ -1665,7 +1665,7 @@ namespace plume {
             renderTargetFormats[i] = toVk(desc.renderTargetFormat[i]);
         }
 
-        renderPass = createRenderPass(device, renderTargetFormats.data(), desc.renderTargetCount, toVk(desc.depthTargetFormat), VkSampleCountFlagBits(desc.multisampling.sampleCount), desc.viewMask);
+        renderPass = createRenderPass(device, renderTargetFormats.data(), desc.renderTargetCount, toVk(desc.depthTargetFormat), VkSampleCountFlagBits(desc.multisampling.sampleCount), desc.viewMask, desc.fragmentDensityMap);
         if (renderPass == VK_NULL_HANDLE) {
             return;
         }
@@ -1712,7 +1712,7 @@ namespace plume {
         return RenderPipelineProgram();
     }
 
-    VkRenderPass VulkanGraphicsPipeline::createRenderPass(VulkanDevice *device, const VkFormat *renderTargetFormat, uint32_t renderTargetCount, VkFormat depthTargetFormat, VkSampleCountFlagBits sampleCount, uint32_t viewMask) {
+    VkRenderPass VulkanGraphicsPipeline::createRenderPass(VulkanDevice *device, const VkFormat *renderTargetFormat, uint32_t renderTargetCount, VkFormat depthTargetFormat, VkSampleCountFlagBits sampleCount, uint32_t viewMask, bool fragmentDensityMap) {
         VkRenderPass renderPass = VK_NULL_HANDLE;
         VkSubpassDescription subpass = {};
         VkAttachmentReference depthReference = {};
@@ -1760,6 +1760,27 @@ namespace plume {
             attachments.emplace_back(attachment);
         }
 
+        // The density attachment, if this pipeline draws into a foveated pass.
+        // It is not referenced by the subpass - the render pass points at it
+        // through pNext - but it must exist in the attachment list or the pass
+        // is incompatible with the framebuffer's.
+        VkAttachmentReference densityReference = {};
+        if (fragmentDensityMap) {
+            densityReference.attachment = uint32_t(attachments.size());
+            densityReference.layout = VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
+
+            VkAttachmentDescription attachment = {};
+            attachment.format = VK_FORMAT_R8G8_UNORM;
+            attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+            attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            attachment.initialLayout = VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
+            attachment.finalLayout = VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
+            attachments.emplace_back(attachment);
+        }
+
         VkRenderPassCreateInfo passInfo = {};
         passInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
         passInfo.pAttachments = !attachments.empty() ? attachments.data() : nullptr;
@@ -1780,6 +1801,16 @@ namespace plume {
             multiviewInfo.correlationMaskCount = 1;
             multiviewInfo.pCorrelationMasks = &correlationMask;
             passInfo.pNext = &multiviewInfo;
+        }
+
+        // Chained after multiview, not instead of it - a foveated multiview
+        // pass needs both.
+        VkRenderPassFragmentDensityMapCreateInfoEXT densityInfo = {};
+        if (fragmentDensityMap) {
+            densityInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_FRAGMENT_DENSITY_MAP_CREATE_INFO_EXT;
+            densityInfo.fragmentDensityMapAttachment = densityReference;
+            densityInfo.pNext = passInfo.pNext;
+            passInfo.pNext = &densityInfo;
         }
 
         VkResult res = vkCreateRenderPass(device->vk, &passInfo, nullptr, &renderPass);
@@ -2684,6 +2715,44 @@ namespace plume {
             subpass.pDepthStencilAttachment = &depthReference;
         }
 
+        // The fragment density map, mirroring the pipeline's pass. It is not
+        // referenced by the subpass - the pass points at it through pNext - but
+        // it must be in the attachment list and in the framebuffer's views, and
+        // both passes must agree, or they are incompatible.
+        VkAttachmentReference fbDensityReference = {};
+        const bool fbHasDensityMap =
+            (desc.fragmentDensityMap != nullptr) || (desc.fragmentDensityMapView != nullptr);
+        if (fbHasDensityMap) {
+            const VulkanTexture *densityTexture = nullptr;
+            VkImageView densityImageView = VK_NULL_HANDLE;
+            if (desc.fragmentDensityMapView != nullptr) {
+                const VulkanTextureView *view = static_cast<const VulkanTextureView *>(desc.fragmentDensityMapView);
+                densityTexture = view->texture;
+                densityImageView = view->vk;
+            }
+            else {
+                densityTexture = static_cast<const VulkanTexture *>(desc.fragmentDensityMap);
+                densityImageView = densityTexture->imageView;
+            }
+
+            fbDensityReference.attachment = uint32_t(attachments.size());
+            fbDensityReference.layout = VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
+
+            VkAttachmentDescription attachment = {};
+            attachment.format = toVk(densityTexture->desc.format);
+            attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+            attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            attachment.initialLayout = VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
+            attachment.finalLayout = VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
+            attachments.emplace_back(attachment);
+            imageViews.emplace_back(densityImageView);
+        }
+        hasFragmentDensityMap = fbHasDensityMap;
+        densityMapReference = fbDensityReference;
+
         // Mirrors the pipeline's render pass: Vulkan requires the two to be
         // compatible, so a multiview pipeline needs a multiview framebuffer
         // pass with the same mask or every draw is a validation error.
@@ -2700,6 +2769,14 @@ namespace plume {
             fbMultiviewInfo.correlationMaskCount = 1;
             fbMultiviewInfo.pCorrelationMasks = &fbCorrelationMask;
             passInfo.pNext = &fbMultiviewInfo;
+        }
+
+        VkRenderPassFragmentDensityMapCreateInfoEXT fbDensityInfo = {};
+        if (fbHasDensityMap) {
+            fbDensityInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_FRAGMENT_DENSITY_MAP_CREATE_INFO_EXT;
+            fbDensityInfo.fragmentDensityMapAttachment = fbDensityReference;
+            fbDensityInfo.pNext = passInfo.pNext;
+            passInfo.pNext = &fbDensityInfo;
         }
         passInfo.pAttachments = attachments.data();
         passInfo.attachmentCount = uint32_t(attachments.size());
@@ -2793,6 +2870,11 @@ namespace plume {
         uint32_t passViewMask = viewMask;
         const uint32_t correlationMask = passViewMask;
         VkRenderPassMultiviewCreateInfo multiviewInfo = {};
+        // The clear variant carries the density attachment too. It is built
+        // from the same attachmentDescs, so the attachment is already present -
+        // what has to be repeated is the pNext that points at it, or this
+        // variant is incompatible with the pipelines built for the LOAD pass.
+        VkRenderPassFragmentDensityMapCreateInfoEXT densityInfo = {};
         VkRenderPassCreateInfo passInfo = {};
         passInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
         if (passViewMask != 0) {
@@ -2807,6 +2889,17 @@ namespace plume {
         passInfo.attachmentCount = uint32_t(variant.size());
         passInfo.pSubpasses = &subpass;
         passInfo.subpassCount = 1;
+
+        // The variant must point at the density attachment too. The attachment
+        // itself is already in attachmentDescs, which this copies - but the
+        // pNext that nominates it is rebuilt here, and a variant without it is
+        // incompatible with the pipelines built for the LOAD pass.
+        if (hasFragmentDensityMap) {
+            densityInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_FRAGMENT_DENSITY_MAP_CREATE_INFO_EXT;
+            densityInfo.fragmentDensityMapAttachment = densityMapReference;
+            densityInfo.pNext = passInfo.pNext;
+            passInfo.pNext = &densityInfo;
+        }
 
         VkRenderPass pass = VK_NULL_HANDLE;
         const VkResult res = vkCreateRenderPass(device->vk, &passInfo, nullptr, &pass);

@@ -1281,6 +1281,10 @@ namespace plume {
     };
 
     struct RenderGraphicsPipelineDesc {
+        // Must match the framebuffer's fragmentDensityMap. See
+        // RenderFramebufferDesc: the two render passes have to stay
+        // compatible, and a mismatch is undefined rather than an error.
+        bool fragmentDensityMap = false;
         static const uint32_t MaxRenderTargets = 8;
 
         const RenderPipelineLayout *pipelineLayout = nullptr;
@@ -1648,6 +1652,20 @@ namespace plume {
         const RenderTexture *depthAttachment = nullptr;
         const RenderTextureView *depthAttachmentView = nullptr;
         bool depthAttachmentReadOnly = false;
+
+        // Fixed foveated rendering. A fragment density map says, per tile, how
+        // many pixels one fragment covers - so the periphery can shade at a
+        // fraction of the centre's rate. Unlike XR_FB_foveation this attaches
+        // to an ordinary render pass, so a renderer that owns its own targets
+        // can foveate them.
+        //
+        // A pipeline drawn into this framebuffer MUST set the matching flag on
+        // RenderGraphicsPipelineDesc. The density map is an extra attachment,
+        // and a pipeline whose render pass lacks it is INCOMPATIBLE - which
+        // Vulkan treats as undefined rather than as an error, so the symptom is
+        // a plausible black frame with a normal draw count.
+        const RenderTexture *fragmentDensityMap = nullptr;
+        const RenderTextureView *fragmentDensityMapView = nullptr;
 
         RenderFramebufferDesc() = default;
 

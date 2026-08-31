@@ -190,7 +190,7 @@ namespace plume {
         ~VulkanGraphicsPipeline() override;
         void setName(const std::string &name) override;
         RenderPipelineProgram getProgram(const std::string &name) const override;
-        static VkRenderPass createRenderPass(VulkanDevice *device, const VkFormat *renderTargetFormat, uint32_t renderTargetCount, VkFormat depthTargetFormat, VkSampleCountFlagBits sampleCount, uint32_t viewMask = 0);
+        static VkRenderPass createRenderPass(VulkanDevice *device, const VkFormat *renderTargetFormat, uint32_t renderTargetCount, VkFormat depthTargetFormat, VkSampleCountFlagBits sampleCount, uint32_t viewMask = 0, bool fragmentDensityMap = false);
     };
 
     struct VulkanRaytracingPipeline : VulkanPipeline {
@@ -281,6 +281,10 @@ namespace plume {
         std::vector<VkAttachmentDescription> attachmentDescs;
         std::vector<VkAttachmentReference> colorReferences;
         VkAttachmentReference depthReference = {};
+        // Foveation, mirrored into every clear-variant pass so they stay
+        // compatible with the pipelines drawn into them.
+        bool hasFragmentDensityMap = false;
+        VkAttachmentReference densityMapReference = {};
         bool hasDepthAttachment = false;
         uint32_t viewMask = 0;
         mutable std::unordered_map<uint32_t, VkRenderPass> clearPassCache;
