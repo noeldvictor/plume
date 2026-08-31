@@ -3627,13 +3627,20 @@ namespace plume {
         const VulkanTexture *src = static_cast<const VulkanTexture *>(srcTexture);
         VkImageLayout srcLayout = toImageLayout(src->textureLayout);
         VkImageLayout dstLayout = toImageLayout(dst->textureLayout);
+        // Every layer, not just the first. This copies a whole texture, and a
+        // hardcoded layerCount of 1 silently dropped all but array layer 0 -
+        // which on a two-layer multiview target means the copy keeps the left
+        // eye and discards the right. The mip loop below was already general;
+        // the layer count was not.
+        const uint32_t copyLayers = std::min(std::max(src->desc.arraySize, 1u),
+                                             std::max(dst->desc.arraySize, 1u));
         VkImageCopy imageCopy = {};
         imageCopy.srcSubresource.aspectMask = toAspectFlags(src->desc.format, src->desc.flags);
         imageCopy.srcSubresource.baseArrayLayer = 0;
-        imageCopy.srcSubresource.layerCount = 1;
+        imageCopy.srcSubresource.layerCount = copyLayers;
         imageCopy.dstSubresource.aspectMask = toAspectFlags(dst->desc.format, dst->desc.flags);
         imageCopy.dstSubresource.baseArrayLayer = 0;
-        imageCopy.dstSubresource.layerCount = 1;
+        imageCopy.dstSubresource.layerCount = copyLayers;
         imageCopy.extent.width = uint32_t(dst->desc.width);
         imageCopy.extent.height = dst->desc.height;
         imageCopy.extent.depth = dst->desc.depth;
