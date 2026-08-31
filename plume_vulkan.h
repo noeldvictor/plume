@@ -322,6 +322,13 @@ namespace plume {
         // folded into the pass's load operation rather than costing a full tile
         // load followed by a vkCmdClearAttachments that discards it.
         uint32_t pendingClearMask = 0;
+        // Textures the caller has said it does not need the previous contents
+        // of. Turned into VK_ATTACHMENT_LOAD_OP_DONT_CARE at pass begin, which
+        // on a tiler is the difference between reading the whole target back
+        // from memory and not touching it at all. discardTexture used to be a
+        // no-op here ("not required in Vulkan"), which is true of the API and
+        // false of the hardware.
+        std::vector<const RenderTexture *> pendingDiscards;
         VkClearValue pendingClearValues[9] = {};
         const VulkanPipelineLayout *activeComputePipelineLayout = nullptr;
         const VulkanPipelineLayout *activeGraphicsPipelineLayout = nullptr;

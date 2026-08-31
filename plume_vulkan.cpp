@@ -2850,10 +2850,16 @@ namespace plume {
         // load operations differ, and render-pass compatibility ignores those.
         // So this framebuffer and every pipeline built against the LOAD pass
         // stay valid against the variant.
+        // Bits 0-7 clear colour, 8/9 clear depth/stencil, 16-23 discard colour,
+        // 24/25 discard depth/stencil. CLEAR wins over DONT_CARE where both are
+        // asked for - a clear is a defined result and a discard is not.
         std::vector<VkAttachmentDescription> variant = attachmentDescs;
         for (size_t i = 0; i < colorReferences.size(); i++) {
             if (clearMask & (1u << i)) {
                 variant[colorReferences[i].attachment].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            }
+            else if (clearMask & (1u << (16 + i))) {
+                variant[colorReferences[i].attachment].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             }
         }
 
@@ -2862,8 +2868,14 @@ namespace plume {
             if (clearMask & (1u << 8)) {
                 depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             }
+            else if (clearMask & (1u << 24)) {
+                depth.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            }
             if (clearMask & (1u << 9)) {
                 depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            }
+            else if (clearMask & (1u << 25)) {
+                depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             }
         }
 
@@ -3770,7 +3782,20 @@ namespace plume {
     }
 
     void VulkanCommandList::discardTexture(const RenderTexture* texture) {
-        // Not required in Vulkan.
+        // Vulkan has no discard call; it expresses the same thing as a render
+        // pass load operation. Remember the texture so the next pass that
+        // attaches it can use DONT_CARE instead of LOAD.
+        if (texture == nullptr) {
+            return;
+        }
+
+        for (const RenderTexture *t : pendingDiscards) {
+            if (t == texture) {
+                return;
+            }
+        }
+
+        pendingDiscards.emplace_back(texture);
     }
 
     void VulkanCommandList::resetQueryPool(const RenderQueryPool *queryPool, uint32_t queryFirstIndex, uint32_t queryCount) {
@@ -3796,7 +3821,27 @@ namespace plume {
             // saving: LOAD_OP_LOAD pulls every tile in from main memory only
             // for vkCmdClearAttachments to overwrite it, where LOAD_OP_CLEAR
             // initialises the tile on chip and never reads memory at all.
-            const uint32_t clearMask = pendingClearMask;
+            uint32_t clearMask = pendingClearMask;
+            if (!pendingDiscards.empty()) {
+                const size_t colorCount = targetFramebuffer->colorAttachments.size();
+                for (size_t i = 0; i < colorCount && i < 8; i++) {
+                    for (const RenderTexture *t : pendingDiscards) {
+                        if (t == targetFramebuffer->colorAttachments[i]) {
+                            clearMask |= (1u << (16 + i));
+                            break;
+                        }
+                    }
+                }
+
+                if (targetFramebuffer->hasDepthAttachment && targetFramebuffer->depthAttachment != nullptr) {
+                    for (const RenderTexture *t : pendingDiscards) {
+                        if (t == targetFramebuffer->depthAttachment) {
+                            clearMask |= (1u << 24) | (1u << 25);
+                            break;
+                        }
+                    }
+                }
+            }
             VkClearValue clearValues[9] = {};
             if (clearMask != 0) {
                 const size_t colorCount = targetFramebuffer->colorAttachments.size();
@@ -3821,6 +3866,7 @@ namespace plume {
             vkCmdBeginRenderPass(vk, &beginInfo, VkSubpassContents::VK_SUBPASS_CONTENTS_INLINE);
             activeRenderPass = beginInfo.renderPass;
             pendingClearMask = 0;
+            pendingDiscards.clear();
         }
     }
 
