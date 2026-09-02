@@ -4981,7 +4981,40 @@ namespace plume {
             } else {
                 auto gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(icd, "vk_icdGetInstanceProcAddr"));
                 if (gipa == nullptr) {
-                    fprintf(stderr, "%s has no vk_icdGetInstanceProcAddr\n", options.icdLibraryPath.c_str());
+                    gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(icd, "vkGetInstanceProcAddr"));
+                }
+                if (gipa == nullptr) {
+                    // Android HAL-style driver: the only export is HMI, a
+                    // hw_module_t whose open() hands back a hwvulkan_device_t
+                    // carrying GetInstanceProcAddr. Mesa's Android builds of
+                    // Turnip ship this shape. Minimal layouts, matching
+                    // hardware/hardware.h and hardware/hwvulkan.h.
+                    struct hw_module_methods_min { int (*open)(const void *module, const char *id, void **device); };
+                    struct hw_module_min {
+                        uint32_t tag; uint16_t module_api_version; uint16_t hal_api_version;
+                        const char *id; const char *name; const char *author;
+                        hw_module_methods_min *methods; void *dso; uintptr_t reserved[32 - 7];
+                    };
+                    struct hw_device_min { uint32_t tag; uint32_t version; hw_module_min *module; uint64_t reserved[12]; int (*close)(void *); };
+                    struct hwvulkan_device_min {
+                        hw_device_min common;
+                        PFN_vkEnumerateInstanceExtensionProperties EnumerateInstanceExtensionProperties;
+                        PFN_vkCreateInstance CreateInstance;
+                        PFN_vkGetInstanceProcAddr GetInstanceProcAddr;
+                    };
+                    auto *hmi = reinterpret_cast<hw_module_min *>(dlsym(icd, "HMI"));
+                    if (hmi != nullptr && hmi->methods != nullptr && hmi->methods->open != nullptr) {
+                        void *dev = nullptr;
+                        if (hmi->methods->open(hmi, "vk0", &dev) == 0 && dev != nullptr) {
+                            gipa = reinterpret_cast<hwvulkan_device_min *>(dev)->GetInstanceProcAddr;
+                            fprintf(stderr, "plume: opened %s through its HMI module\n", options.icdLibraryPath.c_str());
+                        } else {
+                            fprintf(stderr, "plume: HMI open() failed for %s\n", options.icdLibraryPath.c_str());
+                        }
+                    }
+                }
+                if (gipa == nullptr) {
+                    fprintf(stderr, "%s has no vk_icdGetInstanceProcAddr, vkGetInstanceProcAddr or HMI\n", options.icdLibraryPath.c_str());
                     res = VK_ERROR_INITIALIZATION_FAILED;
                 } else {
                     volkInitializeCustom(gipa);
