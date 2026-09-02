@@ -4550,7 +4550,9 @@ namespace plume {
         createInfo.enabledExtensionCount = uint32_t(enabledExtensions.size());
         createInfo.pEnabledFeatures = &deviceFeatures.features;
 
-        VkResult res = vkCreateDevice(physicalDevice, &createInfo, nullptr, &vk);
+        VkResult res = renderInterface->options.createDevice
+                           ? renderInterface->options.createDevice(physicalDevice, &createInfo, &vk)
+                           : vkCreateDevice(physicalDevice, &createInfo, nullptr, &vk);
         if (res != VK_SUCCESS) {
             fprintf(stderr, "vkCreateDevice failed with error code 0x%X.\n", res);
             return;
@@ -5143,7 +5145,8 @@ namespace plume {
         }
 #   endif
         
-        res = vkCreateInstance(&createInfo, nullptr, &instance);
+        res = options.createInstance ? options.createInstance(&createInfo, &instance)
+                                     : vkCreateInstance(&createInfo, nullptr, &instance);
         if (res != VK_SUCCESS) {
             fprintf(stderr, "vkCreateInstance failed with error code 0x%X.\n", res);
             return;

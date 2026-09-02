@@ -9,6 +9,7 @@
 
 #include "plume_render_interface.h"
 
+#include <functional>
 #include <mutex>
 #include <set>
 #include <unordered_map>
@@ -489,6 +490,7 @@ namespace plume {
     // Every field is optional. A null options pointer keeps the original
     // behaviour exactly.
     struct VulkanInterfaceOptions {
+        // std::function for the two creation callbacks below.
         std::vector<std::string> extraInstanceExtensions;
         std::vector<std::string> extraDeviceExtensions;
         // From xrGetVulkanGraphicsDeviceKHR. Overrides the scoring below,
@@ -504,6 +506,15 @@ namespace plume {
         // says why a render pass fell back to system-memory rendering where
         // the vendor blob says nothing. Empty means the normal loader.
         std::string icdLibraryPath;
+        // When set, these perform the actual vkCreateInstance / vkCreateDevice
+        // with the create-info plume built, so an OpenXR runtime can create
+        // both through XR_KHR_vulkan_enable2 (xrCreateVulkanInstanceKHR and
+        // xrCreateVulkanDeviceKHR take the same Vulkan structures plus the
+        // vkGetInstanceProcAddr to use). The runtime then dispatches through
+        // that entry point rather than the system loader, which is what lets a
+        // directly loaded ICD drive the headset.
+        std::function<VkResult(const VkInstanceCreateInfo *, VkInstance *)> createInstance;
+        std::function<VkResult(VkPhysicalDevice, const VkDeviceCreateInfo *, VkDevice *)> createDevice;
     };
 
     struct VulkanInterface : RenderInterface {
