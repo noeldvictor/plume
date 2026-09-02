@@ -498,6 +498,12 @@ namespace plume {
         // From xrGetVulkanGraphicsRequirementsKHR. Only ever raises the
         // version plume asks for, never lowers it.
         uint32_t minApiVersion = 0;
+        // A Vulkan ICD to load directly instead of the platform loader: the
+        // library's vk_icdGetInstanceProcAddr becomes volk's entry point. For
+        // a replacement driver such as Mesa's Turnip on Adreno, whose logging
+        // says why a render pass fell back to system-memory rendering where
+        // the vendor blob says nothing. Empty means the normal loader.
+        std::string icdLibraryPath;
     };
 
     struct VulkanInterface : RenderInterface {

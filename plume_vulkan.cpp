@@ -11,6 +11,9 @@
 #include "plume_vulkan.h"
 
 #include <cstdlib>
+#if !defined(_WIN32)
+#include <dlfcn.h>
+#endif
 
 #if defined(__ANDROID__)
 // plume reports every Vulkan failure through fprintf(stderr, ...), and Android
@@ -4962,7 +4965,33 @@ namespace plume {
             options = *optionsIn;
         }
 
-        VkResult res = volkInitialize();
+        VkResult res = VK_SUCCESS;
+        if (!options.icdLibraryPath.empty()) {
+#if defined(_WIN32)
+            fprintf(stderr, "icdLibraryPath is not supported on Windows.\n");
+            res = VK_ERROR_INITIALIZATION_FAILED;
+#else
+            // Bypass the platform loader and talk to one ICD directly. No
+            // layers, no loader dispatch: the instance and device handles are
+            // the driver's own, which is what a replacement driver needs.
+            void *icd = dlopen(options.icdLibraryPath.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (icd == nullptr) {
+                fprintf(stderr, "dlopen(%s) failed: %s\n", options.icdLibraryPath.c_str(), dlerror());
+                res = VK_ERROR_INITIALIZATION_FAILED;
+            } else {
+                auto gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(icd, "vk_icdGetInstanceProcAddr"));
+                if (gipa == nullptr) {
+                    fprintf(stderr, "%s has no vk_icdGetInstanceProcAddr\n", options.icdLibraryPath.c_str());
+                    res = VK_ERROR_INITIALIZATION_FAILED;
+                } else {
+                    volkInitializeCustom(gipa);
+                    fprintf(stderr, "plume: Vulkan ICD loaded directly from %s\n", options.icdLibraryPath.c_str());
+                }
+            }
+#endif
+        } else {
+            res = volkInitialize();
+        }
         if (res != VK_SUCCESS) {
             fprintf(stderr, "volkInitialize failed with error code 0x%X.\n", res);
             return;
