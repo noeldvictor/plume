@@ -331,6 +331,24 @@ namespace plume {
         // false of the hardware.
         std::vector<const RenderTexture *> pendingDiscards;
         VkClearValue pendingClearValues[9] = {};
+        // A deferred clear that outlived its framebuffer binding. The caller
+        // clears a target, unbinds it, renders elsewhere and comes back to it
+        // (measured 2026-09-02: the scene colour is cleared, then the shadow
+        // and reflection passes run, then the scene draws). Flushing at the
+        // switch spent a zero-draw pass on the clear and made the real pass
+        // LOAD the target. Held clears are keyed to the texture: the next pass
+        // that binds it takes the clear as its load op, and a barrier or copy
+        // touching the texture first flushes it as a pass of its own.
+        struct HeldClear {
+            const VulkanTexture *texture = nullptr;
+            const VulkanFramebuffer *framebuffer = nullptr;
+            uint32_t bits = 0;
+            VkClearValue value = {};
+        };
+        std::vector<HeldClear> heldClears;
+        void holdPendingClears();
+        void flushHeldClears(const RenderTexture *texture);
+        void flushAllHeldClears();
         const VulkanPipelineLayout *activeComputePipelineLayout = nullptr;
         const VulkanPipelineLayout *activeGraphicsPipelineLayout = nullptr;
         const VulkanPipelineLayout *activeRaytracingPipelineLayout = nullptr;
@@ -521,6 +539,13 @@ namespace plume {
         // uses it is pending is then formally invalid, so this is for asking a
         // tiler driver whether update-after-bind is what keeps it from binning.
         bool noUpdateAfterBind = false;
+        // Probes for a driver's global render-mode choice (2026-09-02: no
+        // pass of the app bins on Adreno 650 while the compositor's do).
+        // noRobustness leaves robustBufferAccess, robustBufferAccess2 and
+        // robustImageAccess2 off at device creation; disabledDeviceExtensions
+        // are optional extensions to treat as unsupported.
+        bool noRobustness = false;
+        std::vector<std::string> disabledDeviceExtensions;
     };
 
     struct VulkanInterface : RenderInterface {

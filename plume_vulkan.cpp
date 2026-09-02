@@ -3094,6 +3094,7 @@ namespace plume {
 
     void VulkanCommandList::end() {
         endActiveRenderPass();
+        flushAllHeldClears();
 
         VkResult res = vkEndCommandBuffer(vk);
         if (res != VK_SUCCESS) {
@@ -3107,7 +3108,26 @@ namespace plume {
         activeRaytracingPipelineLayout = nullptr;
     }
 
+    static FILE *fbTraceFile();
+
     void VulkanCommandList::barriers(RenderBarrierStages stages, const RenderBufferBarrier *bufferBarriers, uint32_t bufferBarriersCount, const RenderTextureBarrier *textureBarriers, uint32_t textureBarriersCount) {
+        // A held clear must land before its texture changes layout: whatever
+        // follows the barrier may read the attachment.
+        if (!heldClears.empty()) {
+            for (uint32_t i = 0; i < textureBarriersCount; i++) {
+                if (FILE *tf = fbTraceFile()) {
+                    for (const HeldClear &held : heldClears) {
+                        if (held.texture == textureBarriers[i].texture) {
+                            fprintf(tf, "  barrier on held texture %p -> layout %d (stages 0x%x)\n", (const void *)held.texture,
+                                    int(textureBarriers[i].layout), unsigned(stages));
+                        }
+                    }
+                }
+
+                flushHeldClears(textureBarriers[i].texture);
+            }
+        }
+
         assert((bufferBarriersCount == 0) || (bufferBarriers != nullptr));
         assert((textureBarriersCount == 0) || (textureBarriers != nullptr));
 
@@ -3386,15 +3406,181 @@ namespace plume {
         }
     }
 
-    void VulkanCommandList::setFramebuffer(const RenderFramebuffer *framebuffer) {
-        endActiveRenderPass();
-
-        if (framebuffer != nullptr) {
-            const VulkanFramebuffer *interfaceFramebuffer = static_cast<const VulkanFramebuffer *>(framebuffer);
-            targetFramebuffer = interfaceFramebuffer;
+    // PLUME_FB_TRACE=<path>: append one line per framebuffer switch, pass begin
+    // and pass end, with the pending clear mask. A desktop probe for the order
+    // in which the host binds, clears and draws (2026-09-02).
+    static FILE *fbTraceFile() {
+        static FILE *f = nullptr;
+        static bool tried = false;
+        if (!tried) {
+            tried = true;
+            const char *path = getenv("PLUME_FB_TRACE");
+            if (path != nullptr && path[0] != '\0') {
+                f = fopen(path, "w");
+                // Unbuffered so the host's appended lines interleave in order
+                // (the MSVC CRT has no line buffering, and the process is
+                // usually killed before a full buffer would flush).
+                if (f != nullptr) {
+                    setvbuf(f, nullptr, _IONBF, 0);
+                }
+            }
         }
-        else {
-            targetFramebuffer = nullptr;
+        return f;
+    }
+
+    void VulkanCommandList::setFramebuffer(const RenderFramebuffer *framebuffer) {
+        const VulkanFramebuffer *next = static_cast<const VulkanFramebuffer *>(framebuffer);
+        if (FILE *tf = fbTraceFile()) {
+            fprintf(tf, "setFramebuffer old=%p new=%p active=%d pending=0x%x new_colors=%zu new_depth=%p old_color0=%p new_color0=%p\n",
+                    (const void *)targetFramebuffer, (const void *)next, activeRenderPass != VK_NULL_HANDLE ? 1 : 0, pendingClearMask,
+                    next ? next->colorAttachments.size() : 0, next ? (const void *)next->depthAttachment : nullptr,
+                    (targetFramebuffer && !targetFramebuffer->colorAttachments.empty()) ? (const void *)targetFramebuffer->colorAttachments[0] : nullptr,
+                    (next && !next->colorAttachments.empty()) ? (const void *)next->colorAttachments[0] : nullptr);
+        }
+
+        if (activeRenderPass == VK_NULL_HANDLE) {
+            // Rebinding the bound framebuffer with no pass open is nothing to
+            // end, and a deferred clear stays deferred for the first draw.
+            if (next == targetFramebuffer) {
+                return;
+            }
+
+            if (pendingClearMask != 0) {
+                holdPendingClears();
+            }
+        }
+
+        endActiveRenderPass();
+        targetFramebuffer = next;
+    }
+
+    void VulkanCommandList::holdPendingClears() {
+        if ((pendingClearMask == 0) || (targetFramebuffer == nullptr)) {
+            pendingClearMask = 0;
+            return;
+        }
+
+        auto hold = [&](const VulkanTexture *texture, uint32_t bits, const VkClearValue &value) {
+            if (texture == nullptr) {
+                return;
+            }
+
+            // A newer clear of the same attachment replaces the older one.
+            for (HeldClear &held : heldClears) {
+                if ((held.texture == texture) && ((held.bits & bits) != 0)) {
+                    held.framebuffer = targetFramebuffer;
+                    held.bits |= bits;
+                    held.value = value;
+                    return;
+                }
+            }
+
+            HeldClear held;
+            held.texture = texture;
+            held.framebuffer = targetFramebuffer;
+            held.bits = bits;
+            held.value = value;
+            heldClears.emplace_back(held);
+        };
+
+        const size_t colorCount = targetFramebuffer->colorAttachments.size();
+        for (size_t i = 0; (i < colorCount) && (i < 8); i++) {
+            if (pendingClearMask & (1u << i)) {
+                hold(targetFramebuffer->colorAttachments[i], 1u << i, pendingClearValues[i]);
+            }
+        }
+
+        const uint32_t depthBits = pendingClearMask & ((1u << 8) | (1u << 9));
+        if (depthBits != 0) {
+            hold(targetFramebuffer->depthAttachment, depthBits, pendingClearValues[8]);
+        }
+
+        if (FILE *tf = fbTraceFile()) {
+            fprintf(tf, "  held pending clear 0x%x from fb=%p (%zu held)\n", pendingClearMask, (const void *)targetFramebuffer, heldClears.size());
+        }
+
+        pendingClearMask = 0;
+    }
+
+    void VulkanCommandList::flushAllHeldClears() {
+        while (!heldClears.empty()) {
+            flushHeldClears(heldClears.front().texture);
+        }
+    }
+
+    void VulkanCommandList::flushHeldClears(const RenderTexture *texture) {
+        // A null texture (a buffer copy location) touches no attachment.
+        if (heldClears.empty() || (texture == nullptr)) {
+            return;
+        }
+
+        const VulkanTexture *match = static_cast<const VulkanTexture *>(texture);
+        size_t keep = 0;
+        std::vector<HeldClear> flush;
+        for (const HeldClear &held : heldClears) {
+            if (held.texture == match) {
+                flush.emplace_back(held);
+            }
+            else {
+                heldClears[keep++] = held;
+            }
+        }
+
+        if (flush.empty()) {
+            return;
+        }
+
+        heldClears.resize(keep);
+
+        // A clear with no draw behind it still has to reach the attachment
+        // before anything reads it: open its framebuffer's pass purely to run
+        // the load operation.
+        if (activeRenderPass != VK_NULL_HANDLE) {
+            vkCmdEndRenderPass(vk);
+            activeRenderPass = VK_NULL_HANDLE;
+        }
+
+        const VulkanFramebuffer *restoreFramebuffer = targetFramebuffer;
+        const uint32_t restoreMask = pendingClearMask;
+        VkClearValue restoreValues[9];
+        for (size_t k = 0; k < 9; k++) {
+            restoreValues[k] = pendingClearValues[k];
+        }
+
+        for (const HeldClear &held : flush) {
+            targetFramebuffer = held.framebuffer;
+            pendingClearMask = 0;
+            const size_t colorCount = targetFramebuffer->colorAttachments.size();
+            for (size_t i = 0; (i < colorCount) && (i < 8); i++) {
+                if ((held.bits & (1u << i)) && (targetFramebuffer->colorAttachments[i] == held.texture)) {
+                    pendingClearMask |= (1u << i);
+                    pendingClearValues[i] = held.value;
+                }
+            }
+
+            const uint32_t depthBits = held.bits & ((1u << 8) | (1u << 9));
+            if ((depthBits != 0) && (targetFramebuffer->depthAttachment == held.texture)) {
+                pendingClearMask |= depthBits;
+                pendingClearValues[8] = held.value;
+            }
+
+            if (pendingClearMask == 0) {
+                continue;
+            }
+
+            if (FILE *tf = fbTraceFile()) {
+                fprintf(tf, "  flushing held clear 0x%x as a pass of its own on fb=%p\n", pendingClearMask, (const void *)targetFramebuffer);
+            }
+
+            checkActiveRenderPass();
+            vkCmdEndRenderPass(vk);
+            activeRenderPass = VK_NULL_HANDLE;
+        }
+
+        targetFramebuffer = restoreFramebuffer;
+        pendingClearMask = restoreMask;
+        for (size_t k = 0; k < 9; k++) {
+            pendingClearValues[k] = restoreValues[k];
         }
     }
 
@@ -3442,9 +3628,15 @@ namespace plume {
             pending[2] = colorValue.b;
             pending[3] = colorValue.a;
             pendingClearMask |= (1u << attachmentIndex);
+            if (FILE *tf = fbTraceFile()) {
+                fprintf(tf, "  clearColor deferred on fb=%p mask=0x%x\n", (const void *)targetFramebuffer, pendingClearMask);
+            }
             return;
         }
 
+        if (FILE *tf = fbTraceFile()) {
+            fprintf(tf, "  clearColor IN-PASS on fb=%p (rects=%u)\n", (const void *)targetFramebuffer, clearRectsCount);
+        }
         checkActiveRenderPass();
 
         thread_local std::vector<VkClearRect> rectVector;
@@ -3514,6 +3706,8 @@ namespace plume {
     }
 
     void VulkanCommandList::copyTextureRegion(const RenderTextureCopyLocation &dstLocation, const RenderTextureCopyLocation &srcLocation, uint32_t dstX, uint32_t dstY, uint32_t dstZ, const RenderBox *srcBox) {
+        flushHeldClears(dstLocation.texture);
+        flushHeldClears(srcLocation.texture);
         endActiveRenderPass();
         
         assert(dstLocation.type != RenderTextureCopyType::UNKNOWN);
@@ -3620,6 +3814,8 @@ namespace plume {
     }
 
     void VulkanCommandList::copyTexture(const RenderTexture *dstTexture, const RenderTexture *srcTexture) {
+        flushHeldClears(dstTexture);
+        flushHeldClears(srcTexture);
         endActiveRenderPass();
 
         assert(dstTexture != nullptr);
@@ -3663,10 +3859,14 @@ namespace plume {
     }
 
     void VulkanCommandList::resolveTexture(const RenderTexture *dstTexture, const RenderTexture *srcTexture) {
+        flushHeldClears(dstTexture);
+        flushHeldClears(srcTexture);
         resolveTextureRegion(dstTexture, 0, 0, srcTexture, nullptr, RenderResolveMode::AVERAGE);
     }
 
     void VulkanCommandList::resolveTextureRegion(const RenderTexture *dstTexture, uint32_t dstX, uint32_t dstY, const RenderTexture *srcTexture, const RenderRect *srcRect, RenderResolveMode resolveMode) {
+        flushHeldClears(dstTexture);
+        flushHeldClears(srcTexture);
         assert(dstTexture != nullptr);
         assert(srcTexture != nullptr);
         assert(resolveMode == RenderResolveMode::AVERAGE && "Vulkan only supports AVERAGE resolve mode.");
@@ -3835,6 +4035,36 @@ namespace plume {
             // saving: LOAD_OP_LOAD pulls every tile in from main memory only
             // for vkCmdClearAttachments to overwrite it, where LOAD_OP_CLEAR
             // initialises the tile on chip and never reads memory at all.
+            // Clears held for this framebuffer's attachments become its load
+            // operations now.
+            if (!heldClears.empty()) {
+                size_t keep = 0;
+                for (const HeldClear &held : heldClears) {
+                    bool taken = false;
+                    const size_t colorCount = targetFramebuffer->colorAttachments.size();
+                    for (size_t i = 0; (i < colorCount) && (i < 8); i++) {
+                        if ((held.bits & 0xFFu) && (targetFramebuffer->colorAttachments[i] == held.texture)) {
+                            pendingClearMask |= (1u << i);
+                            pendingClearValues[i] = held.value;
+                            taken = true;
+                        }
+                    }
+
+                    const uint32_t depthBits = held.bits & ((1u << 8) | (1u << 9));
+                    if ((depthBits != 0) && (targetFramebuffer->depthAttachment != nullptr) && (targetFramebuffer->depthAttachment == held.texture)) {
+                        pendingClearMask |= depthBits;
+                        pendingClearValues[8] = held.value;
+                        taken = true;
+                    }
+
+                    if (!taken) {
+                        heldClears[keep++] = held;
+                    }
+                }
+
+                heldClears.resize(keep);
+            }
+
             uint32_t clearMask = pendingClearMask;
             if (!pendingDiscards.empty()) {
                 const size_t colorCount = targetFramebuffer->colorAttachments.size();
@@ -3878,6 +4108,11 @@ namespace plume {
                 beginInfo.pClearValues = clearValues;
             }
             vkCmdBeginRenderPass(vk, &beginInfo, VkSubpassContents::VK_SUBPASS_CONTENTS_INLINE);
+            if (FILE *tf = fbTraceFile()) {
+                fprintf(tf, "  beginPass fb=%p %ux%u clearMask=0x%x colors=%zu depth=%p\n", (const void *)targetFramebuffer,
+                        targetFramebuffer->width, targetFramebuffer->height, clearMask, targetFramebuffer->colorAttachments.size(),
+                        (const void *)targetFramebuffer->depthAttachment);
+            }
             activeRenderPass = beginInfo.renderPass;
             pendingClearMask = 0;
             pendingDiscards.clear();
@@ -3887,12 +4122,18 @@ namespace plume {
     void VulkanCommandList::endActiveRenderPass() {
         // A clear with no draw behind it still has to reach the attachment, so
         // open the pass purely to run its load operation.
+        // A clear with no pass opened for it yet is held for the pass that
+        // next binds its texture; see HeldClear. It reaches the attachment
+        // before any barrier or copy touches the texture, and at end().
         if ((activeRenderPass == VK_NULL_HANDLE) && (pendingClearMask != 0) && (targetFramebuffer != nullptr)) {
-            checkActiveRenderPass();
+            holdPendingClears();
         }
 
         if (activeRenderPass != VK_NULL_HANDLE) {
             vkCmdEndRenderPass(vk);
+            if (FILE *tf = fbTraceFile()) {
+                fprintf(tf, "  endPass fb=%p\n", (const void *)targetFramebuffer);
+            }
             activeRenderPass = VK_NULL_HANDLE;
         }
     }
@@ -4229,6 +4470,12 @@ namespace plume {
             const std::string extensionName(availableExtensions[i].extensionName);
             missingRequiredExtensions.erase(extensionName);
 
+            const auto &disabled = renderInterface->options.disabledDeviceExtensions;
+            if (std::find(disabled.begin(), disabled.end(), extensionName) != disabled.end()) {
+                fprintf(stderr, "plume: treating %s as unsupported (disabledDeviceExtensions)\n", extensionName.c_str());
+                continue;
+            }
+
             if (extensionName == VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME) {
                 capabilities.fragmentDensityMap = true;
             }
@@ -4349,6 +4596,16 @@ namespace plume {
         deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         deviceFeatures.pNext = featuresChain;
         vkGetPhysicalDeviceFeatures2(physicalDevice, &deviceFeatures);
+
+        if (renderInterface->options.noRobustness) {
+            // Every queried feature is otherwise enabled wholesale below
+            // (pEnabledFeatures = &deviceFeatures.features), robustness
+            // included. See VulkanInterfaceOptions::noRobustness.
+            deviceFeatures.features.robustBufferAccess = VK_FALSE;
+            robustnessFeatures.robustBufferAccess2 = VK_FALSE;
+            robustnessFeatures.robustImageAccess2 = VK_FALSE;
+            fprintf(stderr, "plume: robustBufferAccess / robustness2 access left off (noRobustness)\n");
+        }
 
         // Logged because the recompiled shaders reach guest constants through
         // vk::RawBufferLoad at a uint64_t device address, which needs both of
