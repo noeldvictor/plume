@@ -515,6 +515,12 @@ namespace plume {
         // directly loaded ICD drive the headset.
         std::function<VkResult(const VkInstanceCreateInfo *, VkInstance *)> createInstance;
         std::function<VkResult(VkPhysicalDevice, const VkDeviceCreateInfo *, VkDevice *)> createDevice;
+        // Probe: create boundless descriptor sets without
+        // VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT (partially-bound and
+        // variable-count stay). Writing such a set while a command buffer that
+        // uses it is pending is then formally invalid, so this is for asking a
+        // tiler driver whether update-after-bind is what keeps it from binning.
+        bool noUpdateAfterBind = false;
     };
 
     struct VulkanInterface : RenderInterface {

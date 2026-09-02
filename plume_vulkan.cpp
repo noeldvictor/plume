@@ -1248,14 +1248,16 @@ namespace plume {
         if (descriptorSetDesc.lastRangeIsBoundless && (descriptorSetDesc.descriptorRangesCount > 0)) {
             bindingFlags.clear();
             bindingFlags.resize(descriptorSetDesc.descriptorRangesCount, 0);
-            bindingFlags[descriptorSetDesc.descriptorRangesCount - 1] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
+            const bool noUAB = device->renderInterface->options.noUpdateAfterBind;
+            bindingFlags[descriptorSetDesc.descriptorRangesCount - 1] =
+                (noUAB ? 0 : VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT) | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
 
             flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
             flagsInfo.pBindingFlags = bindingFlags.data();
             flagsInfo.bindingCount = uint32_t(bindingFlags.size());
 
             setLayoutInfo.pNext = &flagsInfo;
-            setLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+            setLayoutInfo.flags = noUAB ? 0 : VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
         }
         
         VkResult res = vkCreateDescriptorSetLayout(device->vk, &setLayoutInfo, nullptr, &vk);
@@ -2006,7 +2008,7 @@ namespace plume {
 
         setLayout = new VulkanDescriptorSetLayout(device, desc);
 
-        descriptorPool = createDescriptorPool(device, typeCounts, desc.lastRangeIsBoundless);
+        descriptorPool = createDescriptorPool(device, typeCounts, desc.lastRangeIsBoundless && !device->renderInterface->options.noUpdateAfterBind);
         if (descriptorPool == VK_NULL_HANDLE) {
             return;
         }
