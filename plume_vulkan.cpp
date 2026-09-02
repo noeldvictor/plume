@@ -1249,8 +1249,23 @@ namespace plume {
             bindingFlags.clear();
             bindingFlags.resize(descriptorSetDesc.descriptorRangesCount, 0);
             const bool noUAB = device->renderInterface->options.noUpdateAfterBind;
-            bindingFlags[descriptorSetDesc.descriptorRangesCount - 1] =
-                (noUAB ? 0 : VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT) | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
+            const VkDescriptorBindingFlags heapFlags = (noUAB ? 0 : VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT) | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+
+            // Every texture or sampler range of a boundless set is a heap:
+            // written after bind, sparsely populated. Only the last range may
+            // carry the variable count (Vulkan requires it to be the highest
+            // binding), but a set that holds several heaps - one per texture
+            // dimension, so that four bound sets suffice on a device that
+            // allows no more - needs the other two flagged the same way, or
+            // an update to a bound set is undefined for them.
+            for (uint32_t i = 0; i < descriptorSetDesc.descriptorRangesCount; i++) {
+                const RenderDescriptorRangeType type = descriptorSetDesc.descriptorRanges[i].type;
+                if ((type == RenderDescriptorRangeType::TEXTURE) || (type == RenderDescriptorRangeType::SAMPLER)) {
+                    bindingFlags[i] = heapFlags;
+                }
+            }
+
+            bindingFlags[descriptorSetDesc.descriptorRangesCount - 1] = heapFlags | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
 
             flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
             flagsInfo.pBindingFlags = bindingFlags.data();
@@ -4898,6 +4913,21 @@ namespace plume {
         capabilities.resolveRegion = true;
         capabilities.resolveModes = false;
         capabilities.descriptorIndexing = descriptorIndexingSupported;
+        {
+            VkPhysicalDeviceDescriptorIndexingProperties indexingProperties = {};
+            indexingProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES;
+            VkPhysicalDeviceProperties2 props2 = {};
+            props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+            props2.pNext = &indexingProperties;
+            vkGetPhysicalDeviceProperties2(physicalDevice, &props2);
+            capabilities.maxBoundDescriptorSets = props2.properties.limits.maxBoundDescriptorSets;
+            capabilities.maxDescriptorSetSampledImages = props2.properties.limits.maxDescriptorSetSampledImages;
+            capabilities.maxDescriptorSetSamplers = props2.properties.limits.maxDescriptorSetSamplers;
+            // Zero when the device does not know the extension's properties;
+            // a caller then falls back to the non-update-after-bind limit.
+            capabilities.maxDescriptorSetUpdateAfterBindSampledImages = indexingProperties.maxDescriptorSetUpdateAfterBindSampledImages;
+            capabilities.maxDescriptorSetUpdateAfterBindSamplers = indexingProperties.maxDescriptorSetUpdateAfterBindSamplers;
+        }
         capabilities.scalarBlockLayout = scalarBlockLayoutSupported;
         capabilities.bufferDeviceAddress = bufferDeviceAddressSupported;
         capabilities.samplerMirrorClampToEdge = supportedOptionalExtensions.find(VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME) != supportedOptionalExtensions.end();

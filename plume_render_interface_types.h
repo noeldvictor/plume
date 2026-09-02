@@ -1847,6 +1847,15 @@ namespace plume {
 
         // Bindless resources.
         bool descriptorIndexing = false;
+        // Descriptor limits. A heap sized past these does not fail politely
+        // on every driver; a renderer sizes its bindless sets from them.
+        // The update-after-bind pair reads zero when the device reports no
+        // descriptor indexing properties.
+        uint32_t maxBoundDescriptorSets = 0;
+        uint32_t maxDescriptorSetSampledImages = 0;
+        uint32_t maxDescriptorSetSamplers = 0;
+        uint32_t maxDescriptorSetUpdateAfterBindSampledImages = 0;
+        uint32_t maxDescriptorSetUpdateAfterBindSamplers = 0;
         bool scalarBlockLayout = false;
 
         // Buffers.
