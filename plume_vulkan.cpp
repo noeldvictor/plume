@@ -4214,6 +4214,11 @@ namespace plume {
         vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, availableExtensions.data());
 
         std::unordered_set<std::string> missingRequiredExtensions = RequiredDeviceExtensions;
+        // A directly loaded ICD may have no WSI; an OpenXR runtime needs none.
+        const bool directIcd = !renderInterface->options.icdLibraryPath.empty();
+        if (directIcd) {
+            missingRequiredExtensions.erase(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+        }
         std::unordered_set<std::string> supportedOptionalExtensions;
 #   if DLSS_ENABLED
         const std::unordered_set<std::string> dlssExtensions = DLSS::getRequiredDeviceExtensionsVulkan(this);
@@ -4518,6 +4523,10 @@ namespace plume {
 
         std::vector<const char *> enabledExtensions;
         for (const std::string &extension : RequiredDeviceExtensions) {
+            // See missingRequiredExtensions above: no WSI under a direct ICD.
+            if (directIcd && extension == VK_KHR_SWAPCHAIN_EXTENSION_NAME) {
+                continue;
+            }
             enabledExtensions.push_back(extension.c_str());
         }
 
@@ -5060,6 +5069,16 @@ namespace plume {
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, availableExtensions.data());
 
         std::unordered_set<std::string> requiredExtensions = RequiredInstanceExtensions;
+        if (!options.icdLibraryPath.empty()) {
+            // A directly loaded ICD has no platform loader in front of it, and
+            // on Android the surface extensions are the loader's. An OpenXR
+            // runtime owns the swapchain images and needs none of them; a flat
+            // swapchain simply cannot be created in this mode.
+            requiredExtensions.erase(VK_KHR_SURFACE_EXTENSION_NAME);
+#   if defined(__ANDROID__)
+            requiredExtensions.erase(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
+#   endif
+        }
         std::unordered_set<std::string> supportedOptionalExtensions;
 #   if DLSS_ENABLED
         const std::unordered_set<std::string> dlssExtensions = DLSS::getRequiredInstanceExtensionsVulkan();
