@@ -2978,16 +2978,17 @@ namespace plume {
 
     // VulkanQueryPool
 
-    VulkanQueryPool::VulkanQueryPool(VulkanDevice *device, uint32_t queryCount, bool statistics) {
+    VulkanQueryPool::VulkanQueryPool(VulkanDevice *device, uint32_t queryCount, bool statistics, bool occlusion) {
         assert(device != nullptr);
         assert(queryCount > 0);
 
         this->device = device;
         this->statistics = statistics;
+        this->occlusion = occlusion;
 
         VkQueryPoolCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        createInfo.queryType = statistics ? VK_QUERY_TYPE_PIPELINE_STATISTICS : VK_QUERY_TYPE_TIMESTAMP;
+        createInfo.queryType = occlusion ? VK_QUERY_TYPE_OCCLUSION : statistics ? VK_QUERY_TYPE_PIPELINE_STATISTICS : VK_QUERY_TYPE_TIMESTAMP;
         createInfo.queryCount = queryCount;
         if (statistics) {
             // One counter per query, so queryResults reads one uint64 each.
@@ -3017,8 +3018,8 @@ namespace plume {
             return;
         }
 
-        // Pipeline statistics are counts, read as they are.
-        if (statistics) {
+        // Pipeline statistics and occlusion samples are counts, read as they are.
+        if (statistics || occlusion) {
             return;
         }
 
@@ -5090,6 +5091,10 @@ namespace plume {
 
     std::unique_ptr<RenderQueryPool> VulkanDevice::createQueryPool(uint32_t queryCount) {
         return std::make_unique<VulkanQueryPool>(this, queryCount);
+    }
+
+    std::unique_ptr<RenderQueryPool> VulkanDevice::createOcclusionQueryPool(uint32_t queryCount) {
+        return std::make_unique<VulkanQueryPool>(this, queryCount, false, true);
     }
 
     std::unique_ptr<RenderQueryPool> VulkanDevice::createStatisticsQueryPool(uint32_t queryCount) {

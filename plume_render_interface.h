@@ -260,6 +260,8 @@ namespace plume {
         // invocations; queryResults reads them raw. Vulkan only: the default
         // returns nothing and the caller does without.
         virtual std::unique_ptr<RenderQueryPool> createStatisticsQueryPool(uint32_t queryCount) { (void)queryCount; return nullptr; }
+        // A pool of occlusion queries (samples passed, read raw). Vulkan only.
+        virtual std::unique_ptr<RenderQueryPool> createOcclusionQueryPool(uint32_t queryCount) { (void)queryCount; return nullptr; }
         virtual void setBottomLevelASBuildInfo(RenderBottomLevelASBuildInfo &buildInfo, const RenderBottomLevelASMesh *meshes, uint32_t meshCount, bool preferFastBuild = true, bool preferFastTrace = false) = 0;
         virtual void setTopLevelASBuildInfo(RenderTopLevelASBuildInfo &buildInfo, const RenderTopLevelASInstance *instances, uint32_t instanceCount, bool preferFastBuild = true, bool preferFastTrace = false) = 0;
         virtual void setShaderBindingTableInfo(RenderShaderBindingTableInfo &tableInfo, const RenderShaderBindingGroups &groups, const RenderPipeline *pipeline, RenderDescriptorSet **descriptorSets, uint32_t descriptorSetCount) = 0;

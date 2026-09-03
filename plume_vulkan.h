@@ -309,8 +309,10 @@ namespace plume {
         // A pipeline-statistics pool (fragment shader invocations) rather
         // than timestamps: queryResults reads its values raw.
         bool statistics = false;
+        // An occlusion pool (samples passed): read raw as well.
+        bool occlusion = false;
 
-        VulkanQueryPool(VulkanDevice *device, uint32_t queryCount, bool statistics = false);
+        VulkanQueryPool(VulkanDevice *device, uint32_t queryCount, bool statistics = false, bool occlusion = false);
         virtual ~VulkanQueryPool() override;
         virtual void queryResults(uint32_t count = 0) override;
         virtual const uint64_t *getResults() const override;
@@ -498,6 +500,7 @@ namespace plume {
         std::unique_ptr<RenderFramebuffer> createFramebuffer(const RenderFramebufferDesc &desc) override;
         std::unique_ptr<RenderQueryPool> createQueryPool(uint32_t queryCount) override;
         std::unique_ptr<RenderQueryPool> createStatisticsQueryPool(uint32_t queryCount) override;
+        std::unique_ptr<RenderQueryPool> createOcclusionQueryPool(uint32_t queryCount) override;
         void setBottomLevelASBuildInfo(RenderBottomLevelASBuildInfo &buildInfo, const RenderBottomLevelASMesh *meshes, uint32_t meshCount, bool preferFastBuild, bool preferFastTrace) override;
         void setTopLevelASBuildInfo(RenderTopLevelASBuildInfo &buildInfo, const RenderTopLevelASInstance *instances, uint32_t instanceCount, bool preferFastBuild, bool preferFastTrace) override;
         void setShaderBindingTableInfo(RenderShaderBindingTableInfo &tableInfo, const RenderShaderBindingGroups &groups, const RenderPipeline *pipeline, RenderDescriptorSet **descriptorSets, uint32_t descriptorSetCount) override;
