@@ -1261,7 +1261,7 @@ namespace plume {
             // an update to a bound set is undefined for them.
             for (uint32_t i = 0; i < descriptorSetDesc.descriptorRangesCount; i++) {
                 const RenderDescriptorRangeType type = descriptorSetDesc.descriptorRanges[i].type;
-                if ((type == RenderDescriptorRangeType::TEXTURE) || (type == RenderDescriptorRangeType::SAMPLER)) {
+                if ((type == RenderDescriptorRangeType::TEXTURE) || (type == RenderDescriptorRangeType::SAMPLER) || (type == RenderDescriptorRangeType::STRUCTURED_BUFFER)) {
                     bindingFlags[i] = heapFlags;
                 }
             }
