@@ -3463,6 +3463,16 @@ namespace plume {
             if (pendingClearMask != 0) {
                 holdPendingClears();
             }
+        } else if (next == targetFramebuffer && pendingClearMask == 0) {
+            // Rebinding the framebuffer whose pass is open is not a pass
+            // boundary. Ending the pass here split reblue's scene pass into
+            // eight (a framebuffer trace, 2026-09-03: seven `old == new,
+            // active=1` sets a frame, each a full store and reload of the
+            // scene's colour and depth on a tiler and a compositor preemption
+            // point on a Quest 2 - 4.5 ms of preemption inside one pass).
+            // Barriers, copies and clears end the pass themselves when they
+            // need to; a plain rebind never does.
+            return;
         }
 
         endActiveRenderPass();
@@ -3706,6 +3716,8 @@ namespace plume {
     }
 
     void VulkanCommandList::copyBufferRegion(RenderBufferReference dstBuffer, RenderBufferReference srcBuffer, uint64_t size) {
+        if (activeRenderPass != VK_NULL_HANDLE) { if (FILE *tf = fbTraceFile()) fprintf(tf, "  pass ended by copyBufferRegion
+"); }
         endActiveRenderPass();
 
         assert(dstBuffer.ref != nullptr);
@@ -3723,6 +3735,8 @@ namespace plume {
     void VulkanCommandList::copyTextureRegion(const RenderTextureCopyLocation &dstLocation, const RenderTextureCopyLocation &srcLocation, uint32_t dstX, uint32_t dstY, uint32_t dstZ, const RenderBox *srcBox) {
         flushHeldClears(dstLocation.texture);
         flushHeldClears(srcLocation.texture);
+        if (activeRenderPass != VK_NULL_HANDLE) { if (FILE *tf = fbTraceFile()) fprintf(tf, "  pass ended by copyTextureRegion
+"); }
         endActiveRenderPass();
         
         assert(dstLocation.type != RenderTextureCopyType::UNKNOWN);
@@ -3831,6 +3845,8 @@ namespace plume {
     void VulkanCommandList::copyTexture(const RenderTexture *dstTexture, const RenderTexture *srcTexture) {
         flushHeldClears(dstTexture);
         flushHeldClears(srcTexture);
+        if (activeRenderPass != VK_NULL_HANDLE) { if (FILE *tf = fbTraceFile()) fprintf(tf, "  pass ended by copyTexture
+"); }
         endActiveRenderPass();
 
         assert(dstTexture != nullptr);
