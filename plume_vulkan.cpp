@@ -870,6 +870,7 @@ namespace plume {
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         bufferInfo.usage |= (desc.flags & RenderBufferFlag::VERTEX) ? VK_BUFFER_USAGE_VERTEX_BUFFER_BIT : 0;
         bufferInfo.usage |= (desc.flags & RenderBufferFlag::INDEX) ? VK_BUFFER_USAGE_INDEX_BUFFER_BIT : 0;
+        bufferInfo.usage |= (desc.flags & RenderBufferFlag::INDIRECT) ? VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT : 0;
         bufferInfo.usage |= (desc.flags & RenderBufferFlag::STORAGE) ? VK_BUFFER_USAGE_STORAGE_BUFFER_BIT : 0;
         bufferInfo.usage |= (desc.flags & RenderBufferFlag::CONSTANT) ? VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT : 0;
         bufferInfo.usage |= (desc.flags & RenderBufferFlag::FORMATTED) ? VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT : 0;
@@ -3275,6 +3276,15 @@ namespace plume {
         vkCmdDraw(vk, vertexCountPerInstance, instanceCount, startVertexLocation, startInstanceLocation);
     }
     
+    void VulkanCommandList::drawIndexedIndirect(const RenderBuffer *buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
+        assert(activeGraphicsPipelineLayout != nullptr);
+        assert(buffer != nullptr);
+        checkActiveRenderPass();
+
+        const VulkanBuffer *interfaceBuffer = static_cast<const VulkanBuffer *>(buffer);
+        vkCmdDrawIndexedIndirect(vk, interfaceBuffer->vk, offset, drawCount, stride);
+    }
+
     void VulkanCommandList::drawIndexedInstanced(uint32_t indexCountPerInstance, uint32_t instanceCount, uint32_t startIndexLocation, int32_t baseVertexLocation, uint32_t startInstanceLocation) {
         assert(activeGraphicsPipelineLayout != nullptr);
         checkActiveRenderPass();
@@ -4955,6 +4965,7 @@ namespace plume {
 
         // Fill capabilities.
         capabilities.geometryShader = deviceFeatures.features.geometryShader;
+        capabilities.multiDrawIndirect = deviceFeatures.features.multiDrawIndirect && deviceFeatures.features.drawIndirectFirstInstance;
         pipelineStatisticsQuery = deviceFeatures.features.pipelineStatisticsQuery;
         capabilities.raytracing = rayTracingSupported;
         capabilities.raytracingStateUpdate = false;

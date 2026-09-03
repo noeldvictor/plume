@@ -2035,6 +2035,10 @@ namespace plume {
         d3d->DrawInstanced(vertexCountPerInstance, instanceCount, startVertexLocation, startInstanceLocation);
     }
 
+    void D3D12CommandList::drawIndexedIndirect(const RenderBuffer *buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
+        assert(false && "drawIndexedIndirect is not implemented on D3D12 (ExecuteIndirect with a command signature would carry it).");
+    }
+
     void D3D12CommandList::drawIndexedInstanced(uint32_t indexCountPerInstance, uint32_t instanceCount, uint32_t startIndexLocation, int32_t baseVertexLocation, uint32_t startInstanceLocation) {
         assert(activeGraphicsPipelineLayout != nullptr);
         checkTopology();

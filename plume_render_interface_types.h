@@ -442,7 +442,9 @@ namespace plume {
             ACCELERATION_STRUCTURE_SCRATCH = 1U << 7,
             SHADER_BINDING_TABLE = 1U << 8,
             UNORDERED_ACCESS = 1U << 9,
-            DEVICE_ADDRESSABLE = 1U << 10
+            DEVICE_ADDRESSABLE = 1U << 10,
+            // Usable as the argument buffer of an indirect draw.
+            INDIRECT = 1U << 11
         };
     };
 
@@ -1847,6 +1849,8 @@ namespace plume {
 
         // Bindless resources.
         bool descriptorIndexing = false;
+        // drawIndexedIndirect with drawCount > 1 and a firstInstance per command.
+        bool multiDrawIndirect = false;
         // Descriptor limits. A heap sized past these does not fail politely
         // on every driver; a renderer sizes its bindless sets from them.
         // The update-after-bind pair reads zero when the device reports no

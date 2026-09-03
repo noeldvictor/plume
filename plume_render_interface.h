@@ -120,6 +120,8 @@ namespace plume {
         virtual void traceRays(uint32_t width, uint32_t height, uint32_t depth, RenderBufferReference shaderBindingTable, const RenderShaderBindingGroupsInfo &shaderBindingGroupsInfo) = 0;
         virtual void drawInstanced(uint32_t vertexCountPerInstance, uint32_t instanceCount, uint32_t startVertexLocation, uint32_t startInstanceLocation) = 0;
         virtual void drawIndexedInstanced(uint32_t indexCountPerInstance, uint32_t instanceCount, uint32_t startIndexLocation, int32_t baseVertexLocation, uint32_t startInstanceLocation) = 0;
+        // drawCount VkDrawIndexedIndirectCommand-shaped commands (index count, instance count, first index, vertex offset, first instance) read from an INDIRECT buffer at offset, stride bytes apart.
+        virtual void drawIndexedIndirect(const RenderBuffer *buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) = 0;
         virtual void setPipeline(const RenderPipeline *pipeline) = 0;
         virtual void setComputePipelineLayout(const RenderPipelineLayout *pipelineLayout) = 0;
         virtual void setComputePushConstants(uint32_t rangeIndex, const void *data, uint32_t offset = 0, uint32_t size = 0) = 0;

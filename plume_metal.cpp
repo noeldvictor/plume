@@ -2512,6 +2512,10 @@ namespace plume {
         activeRenderEncoder->drawPrimitives(activeRenderState->primitiveType, startVertexLocation, vertexCountPerInstance, instanceCount, startInstanceLocation);
     }
 
+    void MetalCommandList::drawIndexedIndirect(const RenderBuffer *buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
+        assert(false && "drawIndexedIndirect is not implemented on Metal.");
+    }
+
     void MetalCommandList::drawIndexedInstanced(const uint32_t indexCountPerInstance, const uint32_t instanceCount, const uint32_t startIndexLocation, const int32_t baseVertexLocation, const uint32_t startInstanceLocation) {
         assert(activeGraphicsPipelineLayout != nullptr);
 
