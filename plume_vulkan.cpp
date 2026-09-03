@@ -3150,6 +3150,18 @@ namespace plume {
             return;
         }
 
+        // PLUME_FB_TRACE: a barrier inside an open pass ends it; name what it
+        // was for, so the host site that split the pass can be found.
+        if (activeRenderPass != VK_NULL_HANDLE) {
+            if (FILE *tf = fbTraceFile()) {
+                fprintf(tf, "  pass ended by barriers: stages=0x%x buffers=%u textures=%u", unsigned(stages), bufferBarriersCount, textureBarriersCount);
+                for (uint32_t i = 0; i < textureBarriersCount; i++) {
+                    fprintf(tf, " [tex %p -> layout %d]", (const void *)textureBarriers[i].texture, int(textureBarriers[i].layout));
+                }
+                fprintf(tf, "\n");
+            }
+        }
+
         endActiveRenderPass();
 
         const bool geometryEnabled = queue->device->capabilities.geometryShader;
@@ -3716,8 +3728,6 @@ namespace plume {
     }
 
     void VulkanCommandList::copyBufferRegion(RenderBufferReference dstBuffer, RenderBufferReference srcBuffer, uint64_t size) {
-        if (activeRenderPass != VK_NULL_HANDLE) { if (FILE *tf = fbTraceFile()) fprintf(tf, "  pass ended by copyBufferRegion
-"); }
         endActiveRenderPass();
 
         assert(dstBuffer.ref != nullptr);
@@ -3735,8 +3745,6 @@ namespace plume {
     void VulkanCommandList::copyTextureRegion(const RenderTextureCopyLocation &dstLocation, const RenderTextureCopyLocation &srcLocation, uint32_t dstX, uint32_t dstY, uint32_t dstZ, const RenderBox *srcBox) {
         flushHeldClears(dstLocation.texture);
         flushHeldClears(srcLocation.texture);
-        if (activeRenderPass != VK_NULL_HANDLE) { if (FILE *tf = fbTraceFile()) fprintf(tf, "  pass ended by copyTextureRegion
-"); }
         endActiveRenderPass();
         
         assert(dstLocation.type != RenderTextureCopyType::UNKNOWN);
@@ -3845,8 +3853,6 @@ namespace plume {
     void VulkanCommandList::copyTexture(const RenderTexture *dstTexture, const RenderTexture *srcTexture) {
         flushHeldClears(dstTexture);
         flushHeldClears(srcTexture);
-        if (activeRenderPass != VK_NULL_HANDLE) { if (FILE *tf = fbTraceFile()) fprintf(tf, "  pass ended by copyTexture
-"); }
         endActiveRenderPass();
 
         assert(dstTexture != nullptr);
