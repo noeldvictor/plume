@@ -3443,7 +3443,11 @@ namespace plume {
             tried = true;
             const char *path = getenv("PLUME_FB_TRACE");
             if (path != nullptr && path[0] != '\0') {
-                f = fopen(path, "w");
+                // Append: the host opens the same file for its own lines and
+                // may have written before plume's first use; a "w" here
+                // truncated those and left the host's handle writing past the
+                // end (2026-09-03). The harness removes the file before a run.
+                f = fopen(path, "a");
                 // Unbuffered so the host's appended lines interleave in order
                 // (the MSVC CRT has no line buffering, and the process is
                 // usually killed before a full buffer would flush).
@@ -5016,7 +5020,14 @@ namespace plume {
     }
 
     std::unique_ptr<RenderTexture> VulkanDevice::createTexture(const RenderTextureDesc &desc) {
-        return std::make_unique<VulkanTexture>(this, nullptr, desc);
+        auto texture = std::make_unique<VulkanTexture>(this, nullptr, desc);
+        // PLUME_FB_TRACE: name every texture once, so a barrier trace's
+        // pointer can be read back to a size, format and layer count.
+        if (FILE *tf = fbTraceFile()) {
+            fprintf(tf, "  created tex %p %ux%u fmt %d layers %u mips %u samples %u flags 0x%x\n", (const void *)texture.get(), desc.width, desc.height,
+                    int(desc.format), desc.arraySize, desc.mipLevels, unsigned(desc.multisampling.sampleCount), unsigned(desc.flags));
+        }
+        return texture;
     }
 
     std::unique_ptr<RenderAccelerationStructure> VulkanDevice::createAccelerationStructure(const RenderAccelerationStructureDesc &desc) {
