@@ -306,8 +306,11 @@ namespace plume {
         VulkanDevice *device = nullptr;
         std::vector<uint64_t> results;
         VkQueryPool vk = VK_NULL_HANDLE;
+        // A pipeline-statistics pool (fragment shader invocations) rather
+        // than timestamps: queryResults reads its values raw.
+        bool statistics = false;
 
-        VulkanQueryPool(VulkanDevice *device, uint32_t queryCount);
+        VulkanQueryPool(VulkanDevice *device, uint32_t queryCount, bool statistics = false);
         virtual ~VulkanQueryPool() override;
         virtual void queryResults(uint32_t count = 0) override;
         virtual const uint64_t *getResults() const override;
@@ -394,6 +397,8 @@ namespace plume {
         void discardTexture(const RenderTexture* texture) override;
         void resetQueryPool(const RenderQueryPool *queryPool, uint32_t queryFirstIndex, uint32_t queryCount) override;
         void writeTimestamp(const RenderQueryPool *queryPool, uint32_t queryIndex) override;
+        void beginQuery(const RenderQueryPool *queryPool, uint32_t queryIndex) override;
+        void endQuery(const RenderQueryPool *queryPool, uint32_t queryIndex) override;
         void checkActiveRenderPass();
         void endActiveRenderPass();
         void setDescriptorSet(VkPipelineBindPoint bindPoint, const VulkanPipelineLayout *pipelineLayout, const RenderDescriptorSet *descriptorSet, uint32_t setIndex, const uint32_t *dynamicOffsets = nullptr, uint32_t dynamicOffsetCount = 0);
@@ -463,6 +468,9 @@ namespace plume {
         uint32_t queueFamilyIndices[3] = {};
         std::vector<VulkanQueueFamily> queueFamilies;
         RenderDeviceCapabilities capabilities;
+        // Whether the device was created with pipelineStatisticsQuery, for
+        // createStatisticsQueryPool.
+        bool pipelineStatisticsQuery = false;
         RenderDeviceDescription description;
         VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtPipelineProperties = {};
         VkPhysicalDeviceSampleLocationsPropertiesEXT sampleLocationProperties = {};
@@ -488,6 +496,7 @@ namespace plume {
         std::unique_ptr<RenderCommandSemaphore> createCommandSemaphore() override;
         std::unique_ptr<RenderFramebuffer> createFramebuffer(const RenderFramebufferDesc &desc) override;
         std::unique_ptr<RenderQueryPool> createQueryPool(uint32_t queryCount) override;
+        std::unique_ptr<RenderQueryPool> createStatisticsQueryPool(uint32_t queryCount) override;
         void setBottomLevelASBuildInfo(RenderBottomLevelASBuildInfo &buildInfo, const RenderBottomLevelASMesh *meshes, uint32_t meshCount, bool preferFastBuild, bool preferFastTrace) override;
         void setTopLevelASBuildInfo(RenderTopLevelASBuildInfo &buildInfo, const RenderTopLevelASInstance *instances, uint32_t instanceCount, bool preferFastBuild, bool preferFastTrace) override;
         void setShaderBindingTableInfo(RenderShaderBindingTableInfo &tableInfo, const RenderShaderBindingGroups &groups, const RenderPipeline *pipeline, RenderDescriptorSet **descriptorSets, uint32_t descriptorSetCount) override;

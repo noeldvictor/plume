@@ -2977,16 +2977,21 @@ namespace plume {
 
     // VulkanQueryPool
 
-    VulkanQueryPool::VulkanQueryPool(VulkanDevice *device, uint32_t queryCount) {
+    VulkanQueryPool::VulkanQueryPool(VulkanDevice *device, uint32_t queryCount, bool statistics) {
         assert(device != nullptr);
         assert(queryCount > 0);
 
         this->device = device;
+        this->statistics = statistics;
 
         VkQueryPoolCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        createInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        createInfo.queryType = statistics ? VK_QUERY_TYPE_PIPELINE_STATISTICS : VK_QUERY_TYPE_TIMESTAMP;
         createInfo.queryCount = queryCount;
+        if (statistics) {
+            // One counter per query, so queryResults reads one uint64 each.
+            createInfo.pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT;
+        }
         
         VkResult res = vkCreateQueryPool(device->vk, &createInfo, nullptr, &vk);
         if (res != VK_SUCCESS) {
@@ -3008,6 +3013,11 @@ namespace plume {
 	    VkResult res = vkGetQueryPoolResults(device->vk, vk, 0, n, sizeof(uint64_t) * n, results.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
         if (res != VK_SUCCESS) {
             fprintf(stderr, "vkGetQueryPoolResults failed with error code 0x%X.\n", res);
+            return;
+        }
+
+        // Pipeline statistics are counts, read as they are.
+        if (statistics) {
             return;
         }
 
@@ -4067,6 +4077,18 @@ namespace plume {
         vkCmdWriteTimestamp(vk, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, interfaceQueryPool->vk, queryIndex);
     }
 
+    void VulkanCommandList::beginQuery(const RenderQueryPool *queryPool, uint32_t queryIndex) {
+        assert(queryPool != nullptr);
+        const VulkanQueryPool *interfaceQueryPool = static_cast<const VulkanQueryPool *>(queryPool);
+        vkCmdBeginQuery(vk, interfaceQueryPool->vk, queryIndex, 0);
+    }
+
+    void VulkanCommandList::endQuery(const RenderQueryPool *queryPool, uint32_t queryIndex) {
+        assert(queryPool != nullptr);
+        const VulkanQueryPool *interfaceQueryPool = static_cast<const VulkanQueryPool *>(queryPool);
+        vkCmdEndQuery(vk, interfaceQueryPool->vk, queryIndex);
+    }
+
     void VulkanCommandList::checkActiveRenderPass() {
         assert(targetFramebuffer != nullptr);
         
@@ -4933,6 +4955,7 @@ namespace plume {
 
         // Fill capabilities.
         capabilities.geometryShader = deviceFeatures.features.geometryShader;
+        pipelineStatisticsQuery = deviceFeatures.features.pipelineStatisticsQuery;
         capabilities.raytracing = rayTracingSupported;
         capabilities.raytracingStateUpdate = false;
         capabilities.sampleLocations = (sampleLocationProperties.sampleLocationSampleCounts != 0);
@@ -5056,6 +5079,13 @@ namespace plume {
 
     std::unique_ptr<RenderQueryPool> VulkanDevice::createQueryPool(uint32_t queryCount) {
         return std::make_unique<VulkanQueryPool>(this, queryCount);
+    }
+
+    std::unique_ptr<RenderQueryPool> VulkanDevice::createStatisticsQueryPool(uint32_t queryCount) {
+        if (!pipelineStatisticsQuery) {
+            return nullptr;
+        }
+        return std::make_unique<VulkanQueryPool>(this, queryCount, true);
     }
 
     void VulkanDevice::setBottomLevelASBuildInfo(RenderBottomLevelASBuildInfo &buildInfo, const RenderBottomLevelASMesh *meshes, uint32_t meshCount, bool preferFastBuild, bool preferFastTrace) {

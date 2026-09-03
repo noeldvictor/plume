@@ -154,6 +154,10 @@ namespace plume {
         virtual void discardTexture(const RenderTexture* texture) = 0; // D3D12 only.
         virtual void resetQueryPool(const RenderQueryPool *queryPool, uint32_t queryFirstIndex, uint32_t queryCount) = 0;
         virtual void writeTimestamp(const RenderQueryPool *queryPool, uint32_t queryIndex) = 0;
+        // Pipeline-statistics queries (fragment shader invocations), on a pool
+        // from createStatisticsQueryPool. Vulkan only; the defaults do nothing.
+        virtual void beginQuery(const RenderQueryPool *queryPool, uint32_t queryIndex) { (void)queryPool; (void)queryIndex; }
+        virtual void endQuery(const RenderQueryPool *queryPool, uint32_t queryIndex) { (void)queryPool; (void)queryIndex; }
 
         // Concrete implementation shortcuts.
         inline void barriers(RenderBarrierStages stages, const RenderBufferBarrier &barrier) {
@@ -250,6 +254,10 @@ namespace plume {
         virtual std::unique_ptr<RenderCommandSemaphore> createCommandSemaphore() = 0;
         virtual std::unique_ptr<RenderFramebuffer> createFramebuffer(const RenderFramebufferDesc &desc) = 0;
         virtual std::unique_ptr<RenderQueryPool> createQueryPool(uint32_t queryCount) = 0;
+        // A pool of pipeline-statistics queries counting fragment shader
+        // invocations; queryResults reads them raw. Vulkan only: the default
+        // returns nothing and the caller does without.
+        virtual std::unique_ptr<RenderQueryPool> createStatisticsQueryPool(uint32_t queryCount) { (void)queryCount; return nullptr; }
         virtual void setBottomLevelASBuildInfo(RenderBottomLevelASBuildInfo &buildInfo, const RenderBottomLevelASMesh *meshes, uint32_t meshCount, bool preferFastBuild = true, bool preferFastTrace = false) = 0;
         virtual void setTopLevelASBuildInfo(RenderTopLevelASBuildInfo &buildInfo, const RenderTopLevelASInstance *instances, uint32_t instanceCount, bool preferFastBuild = true, bool preferFastTrace = false) = 0;
         virtual void setShaderBindingTableInfo(RenderShaderBindingTableInfo &tableInfo, const RenderShaderBindingGroups &groups, const RenderPipeline *pipeline, RenderDescriptorSet **descriptorSets, uint32_t descriptorSetCount) = 0;
